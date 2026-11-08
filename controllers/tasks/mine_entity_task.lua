@@ -7,7 +7,12 @@ local range = 4; -- Approx player reach range
 MineEntityTask = Task:new()
 
 function MineEntityTask:achieved (args)
-  return not self.entity.valid;
+  local done = not self.entity.valid;
+  if(done) then
+    -- a mining_state set by script sticks until it is changed
+    args.player.mining_state = {mining = false};
+  end
+  return done;
 end
 
 function MineEntityTask:tick (args)

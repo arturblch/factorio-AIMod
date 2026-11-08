@@ -16,7 +16,8 @@ end
 
 function ClearAreaTask:tick (args)
   local player = args.player;
-  self.entity_list = player.surface.find_entities_filtered{area=self.area, type="tree"}
+  -- trees and rocks; both block building placement
+  self.entity_list = player.surface.find_entities_filtered{area=self.area, type={"tree", "simple-entity"}}
   table.sort(self.entity_list, function(a, b)
     return util.distance(player.position, a.position) < util.distance(player.position, b.position);
   end)

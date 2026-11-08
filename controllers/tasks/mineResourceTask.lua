@@ -1,42 +1,40 @@
 require 'task'
 require 'util'
+require 'util/inventories'
+require 'controllers/tasks/moveToPointTask'
 
-local range = 4; -- Approx player reach range
+--[[
+  MineResourceTask
+  Mines an ore tile by hand until the inventory holds enough.
+   - target: LuaEntity; the resource entity to mine
+   - type: string; the item that mining it gives
+   - qty: number; how many of `type` the inventory should hold when done
+]]
 MineResourceTask = Task:new()
 
 function MineResourceTask:achieved (args)
   local player = args.player;
-  return player.get_inventory(defines.inventory.character_main).get_item_count(self.type) >= self.qty
+  -- a depleted tile ends the task; the gather task above will pick a new one
+  local done = (not (self.target and self.target.valid))
+    or Inventories.total_craftable_count(player, self.type) >= self.qty;
+  if(done) then
+    -- a mining_state set by script sticks until it is changed
+    player.mining_state = {mining = false};
+  end
+  return done;
+end
+
+function MineResourceTask:toString()
+  return "MineResourceTask - " .. tostring(self.type) .. " up to " .. tostring(self.qty);
 end
 
 function MineResourceTask:tick (args)
   local player = args.player;
-  if(not self.target) then
-    local resources = player.surface.find_entities_filtered{area = 
-      {{player.position.x - range, player.position.y - range}, {player.position.x + range, player.position.y + range}}, 
-      name= self.type}
-
-    local closest;
-    local d = range;
-    for i, resource in ipairs(resources) do
-      if(util.distance(resource.position, player.position) < d) then
-        closest = resource;
-        d = util.distance(resource.position, player.position);
-      end
-    end
-
-    self.target = closest;
-  end
-
-  if(self.target) then
-    local reachable = player.can_reach_entity(self.target)
-    if(reachable) then
-      player.update_selected_entity(self.target.position)
-      player.mining_state = { mining = true, position = self.target.position }
-    else
-      player.print("I can't reach any " .. self.type)
-    end
+  if(player.can_reach_entity(self.target)) then
+    player.update_selected_entity(self.target.position)
+    player.mining_state = { mining = true, position = self.target.position }
   else
-    player.print("I can't see any " .. self.type)
+    local position = self.target.position;
+    args.machine:pushSingle(MoveToPointTask:new{x=position.x, y=position.y});
   end
 end

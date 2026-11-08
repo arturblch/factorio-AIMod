@@ -1,37 +1,29 @@
 require 'resource_source';
 
 require 'util/logger'
+require 'util/inventories'
+require 'util/recipes'
 require 'controllers/tasks/craftRecipeTask'
 
-local log = Logger.makeLogger("CraftResourceSource");
---must be constructed with player and type
+--must be constructed with player
 CraftResourceSource = ResourceSource:new();
 
 function CraftResourceSource:find_recipe(type)
-  if(not self.player) then
-    log("Player not provided!", "ERROR");
-    return false;
-  end
-  -- do we have any recipes that are craftable that result in {{type}}
-  log("Attempting to craft recipe ".. type, "INFO");
-  for name, recipe in pairs(self.player.force.recipes) do
-    if(recipe.enabled and recipe.has_category("crafting")) then
-      for i, product in ipairs(recipe.products) do
-        if(product.name == type) then
-          return recipe;
-        end
-      end
-    end
-  end
-  log("Recipe ".. type .. " not found", "INFO");
-  return nil;
+  return Recipes.handcraft_recipe_for(self.player.force, type);
 end
 
 function CraftResourceSource:provides_type(type)
   return self:find_recipe(type) ~= nil;
 end
 
+function CraftResourceSource:is_valid()
+  return true;
+end
+
+-- {type=type, qty=# wanted in inventory, player=player, machine=GoalMachine}
 function CraftResourceSource:gather(opts)
   local recipe = self:find_recipe(opts.type);
-  opts.machine:pushSingle(CraftRecipeTask:new{recipe=recipe.name, qty=opts.qty});
+  local have = Inventories.total_craftable_count(opts.player, opts.type);
+  local crafts = math.ceil((opts.qty - have) / Recipes.product_amount(recipe, opts.type));
+  opts.machine:pushSingle(CraftRecipeTask:new{recipe=recipe.name, qty=math.max(crafts, 1)});
 end
