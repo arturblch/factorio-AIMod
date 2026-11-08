@@ -1,31 +1,36 @@
 <#
 .SYNOPSIS
-  Runs AIMod headlessly with tests/harness.lua and prints a summary.
+  Plays the AIPlay scenario headlessly with a real player and checks that the
+  bot completes its goals.
 
 .DESCRIPTION
   The Steam build of Factorio refuses to start its GUI outside of Steam, but
-  headless modes work. This script:
+  headless modes work. For every map seed this script:
     1. copies the mod into a temp work folder (your %APPDATA%\Factorio saves,
        settings and mod list are never touched),
-    2. appends `require 'tests/harness'` to the copy's control.lua,
-    3. creates a map with --create (the harness sets the bot up in on_init),
-    4. loads that save with --benchmark and runs it for -Ticks ticks,
-    5. prints the [harness] log lines and the bot's own output.log summary.
-  Exit code is 1 when Factorio failed or logged an error.
+    2. appends `require 'tests/scenario_test'` to the copy's control.lua,
+    3. runs `factorio --test-scenario AIMod/AIPlay` (headless, with a player)
+       until the bot completes its goals or -Ticks pass,
+    4. prints the bot's progress ([test] lines) and its own output.log.
+  Exit code is 0 when the bot completed its goals on every seed, 1 otherwise.
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File tools\run-headless.ps1
 .EXAMPLE
-  powershell -ExecutionPolicy Bypass -File tools\run-headless.ps1 -Ticks 72000 -Full
+  powershell -ExecutionPolicy Bypass -File tools\run-headless.ps1 -Seed 1234567,42,987654,2024 -Brief
 #>
 param(
-  [int]$Ticks = 18000,
-  # same seed = same map, so runs are comparable; pass another one to test other terrain
-  [uint32]$Seed = 1234567,
+  # comma separated, one run per seed; same seed = same map, so runs are
+  # comparable (a string because `powershell -File` can't pass arrays)
+  [string]$Seed = "1234567",
+  # give up after this many ticks (60 per second of game time)
+  [int]$Ticks = 36000,
   [string]$Factorio = "C:\Program Files (x86)\Steam\steamapps\common\Factorio\bin\x64\factorio.exe",
   [string]$WorkDir = (Join-Path $env:TEMP "aimod-headless"),
   # print every goal transition instead of the first/last few
-  [switch]$Full
+  [switch]$Full,
+  # one result line per seed
+  [switch]$Brief
 )
 $ErrorActionPreference = "Stop"
 $repo = Split-Path -Parent $PSScriptRoot
@@ -45,7 +50,7 @@ New-Item -ItemType Directory -Force $modCopy, $data | Out-Null
 
 robocopy $repo $modCopy /E /XD .git .vscode tools /XF PR_NOTES.md *.zip /NFL /NDL /NJH /NJS /NP | Out-Null
 if ($LASTEXITCODE -ge 8) { throw "robocopy failed with code $LASTEXITCODE" }
-Add-Content -Path (Join-Path $modCopy "control.lua") -Value "`r`nrequire 'tests/harness'" -Encoding Ascii
+Add-Content -Path (Join-Path $modCopy "control.lua") -Value "`r`nrequire 'tests/scenario_test'" -Encoding Ascii
 
 $cfg = Join-Path $WorkDir "config.ini"
 @"
@@ -56,71 +61,56 @@ write-data=$($data -replace '\\', '/')
 '{"mods":[{"name":"base","enabled":true},{"name":"AIMod","enabled":true}]}' |
   Set-Content -Encoding Ascii (Join-Path $mods "mod-list.json")
 
-function Invoke-Factorio([string[]]$FactorioArgs, [string]$OutFile) {
-  $all = @("--config", "`"$cfg`"", "--mod-directory", "`"$mods`"") + $FactorioArgs
-  $p = Start-Process -FilePath $Factorio -ArgumentList $all -NoNewWindow -Wait -PassThru `
-    -RedirectStandardOutput $OutFile
-  return $p.ExitCode
-}
-
-function Get-Lines([string]$File) {
-  if (Test-Path $File) { return @(Get-Content $File -Encoding UTF8) } else { return @() }
-}
-
-$harnessPrefix = '^\s*[\d.]+ Script @__AIMod__/tests/harness\.lua:\d+: \[harness\] '
+$testPrefix = '^\s*[\d.]+ Script @__AIMod__/tests/scenario_test\.lua:\d+: \[test\] '
 $errorPattern = '^\s*[\d.]+ Error|non-recoverable|Error while running'
+$botLogPath = Join-Path $data "script-output\output.log"
+$failed = 0
 
-# --- 1. create the map ------------------------------------------------------
-$save = Join-Path $data "saves\harness.zip"
-$createLog = Join-Path $WorkDir "create.log"
-Write-Host "== create map" -ForegroundColor Cyan
-$createExit = Invoke-Factorio @("--create", "`"$save`"", "--map-gen-seed", "$Seed") $createLog
-$createLines = Get-Lines $createLog
-$createLines | Where-Object { $_ -match $harnessPrefix } | ForEach-Object { $_ -replace $harnessPrefix, '' }
-$createErrors = @($createLines | Where-Object { $_ -match $errorPattern })
-if ($createExit -ne 0 -or $createErrors.Count -gt 0) {
-  Write-Host "Map creation failed (exit $createExit):" -ForegroundColor Red
-  $createLines | Select-Object -Last 25
-  exit 1
+foreach ($s in ($Seed -split ',' | ForEach-Object { [uint32]$_.Trim() })) {
+  $runLog = Join-Path $WorkDir "run-$s.log"
+  if (Test-Path $botLogPath) { [System.IO.File]::Delete($botLogPath) } # see the 8.3 note above
+  if (-not $Brief) { Write-Host "== seed $s, up to $Ticks ticks ($([math]::Round($Ticks / 60)) s of game time)" -ForegroundColor Cyan }
+
+  $all = @("--config", "`"$cfg`"", "--mod-directory", "`"$mods`"",
+    "--test-scenario", "AIMod/AIPlay", "--test-ticks", "$Ticks", "--map-gen-seed", "$s")
+  $p = Start-Process -FilePath $Factorio -ArgumentList $all -NoNewWindow -Wait -PassThru -RedirectStandardOutput $runLog
+  $lines = @(Get-Content $runLog -Encoding UTF8)
+  $test = @($lines | Where-Object { $_ -match $testPrefix } | ForEach-Object { $_ -replace $testPrefix, '' })
+  $errors = @($lines | Where-Object { $_ -match $errorPattern })
+  $completed = $test | Where-Object { $_ -match '^COMPLETED' } | Select-Object -First 1
+
+  if (-not $Brief) {
+    $transitions = @($test | Where-Object { $_ -match ' goal -> ' })
+    Write-Host "-- goal transitions ($($transitions.Count) logged)" -ForegroundColor Cyan
+    if ($Full -or $transitions.Count -le 60) { $transitions }
+    else {
+      $transitions | Select-Object -First 30
+      "   ... $($transitions.Count - 60) more ..."
+      $transitions | Select-Object -Last 30
+    }
+    Write-Host "-- snapshots and events" -ForegroundColor Cyan
+    $test | Where-Object { $_ -notmatch ' goal -> ' }
+    Write-Host "-- bot output.log (most frequent lines)" -ForegroundColor Cyan
+    $botLog = @(if (Test-Path $botLogPath) { Get-Content $botLogPath -Encoding UTF8 })
+    "$($botLog.Count) lines"
+    $botLog | Group-Object | Sort-Object Count -Descending | Select-Object -First 12 |
+      ForEach-Object { "{0,7} x {1}" -f $_.Count, $_.Name }
+  }
+
+  if ($p.ExitCode -ne 0 -or $errors.Count -gt 0) {
+    $failed++
+    Write-Host "seed ${s}: FAILED (exit $($p.ExitCode))" -ForegroundColor Red
+    $test | Where-Object { $_ -match 'STORAGE PROBLEM' }
+    $errors | Select-Object -First 10
+    if ($errors.Count -eq 0 -and -not ($test -match 'STORAGE PROBLEM')) { $lines | Select-Object -Last 15 }
+  } elseif ($completed) {
+    Write-Host "seed ${s}: OK, $completed" -ForegroundColor Green
+  } else {
+    $failed++
+    $last = $test | Where-Object { $_ -match ' pos=' } | Select-Object -Last 1
+    Write-Host "seed ${s}: NOT COMPLETED within $Ticks ticks; last snapshot: $last" -ForegroundColor Yellow
+  }
 }
 
-# --- 2. load it and run ------------------------------------------------------
-$runLog = Join-Path $WorkDir "run.log"
-Write-Host "== run $Ticks ticks ($([math]::Round($Ticks / 60)) s of game time)" -ForegroundColor Cyan
-$runExit = Invoke-Factorio @("--benchmark", "`"$save`"", "--benchmark-ticks", "$Ticks", "--benchmark-runs", "1") $runLog
-$runLines = Get-Lines $runLog
-
-$harness = @($runLines | Where-Object { $_ -match $harnessPrefix } | ForEach-Object { $_ -replace $harnessPrefix, '' })
-$transitions = @($harness | Where-Object { $_ -match ' goal -> ' })
-$other = @($harness | Where-Object { $_ -notmatch ' goal -> ' })
-
-Write-Host "-- goal transitions ($($transitions.Count) logged)" -ForegroundColor Cyan
-if ($Full -or $transitions.Count -le 60) {
-  $transitions
-} else {
-  $transitions | Select-Object -First 30
-  "   ... $($transitions.Count - 60) more ..."
-  $transitions | Select-Object -Last 30
-}
-Write-Host "-- snapshots and events" -ForegroundColor Cyan
-$other
-
-Write-Host "-- bot output.log (most frequent lines)" -ForegroundColor Cyan
-$botLog = Get-Lines (Join-Path $data "script-output\output.log")
-"$($botLog.Count) lines"
-$botLog | Group-Object | Sort-Object Count -Descending | Select-Object -First 12 |
-  ForEach-Object { "{0,7} x {1}" -f $_.Count, $_.Name }
-
-$runErrors = @($runLines | Where-Object { $_ -match $errorPattern })
-$perf = $runLines | Where-Object { $_ -match 'Performed \d+ updates' }
-Write-Host "-- result" -ForegroundColor Cyan
-if ($perf) { $perf.Trim() }
-if ($runExit -ne 0 -or $runErrors.Count -gt 0) {
-  Write-Host "FAILED (exit $runExit)" -ForegroundColor Red
-  $runErrors | Select-Object -First 10
-  if ($runErrors.Count -eq 0) { $runLines | Select-Object -Last 25 }
-  exit 1
-}
-if ($harness -match '^COMPLETED') { Write-Host "OK: bot completed its goals" -ForegroundColor Green }
-else { Write-Host "OK: no errors, goals not completed yet" -ForegroundColor Yellow }
-Write-Host "Full logs: $WorkDir"
+if (-not $Brief) { Write-Host "Full logs: $WorkDir" }
+if ($failed -gt 0) { exit 1 }
