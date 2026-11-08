@@ -16,7 +16,8 @@ end
 function GroundResourceSource:gather(opts)
   local position = self.entity.position;
   opts.machine:pushStart({
-    MoveToPointTask:new{x=position.x, y=position.y},
+    -- ore must be walked onto (hand mining reach is short), so no `reach`
+    MoveToPointTask:new{x=position.x, y=position.y, entity=self.entity},
     MineResourceTask:new{target=self.entity, type=opts.type, qty=opts.qty}
   });
 end

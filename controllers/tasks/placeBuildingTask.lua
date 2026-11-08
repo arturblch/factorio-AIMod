@@ -18,8 +18,10 @@ PlaceBuildingTask = Task:new()
 local log = Logger.makeLogger("PlaceBuildingTask");
 local player_build_distance = 6; --see base/prototypes/entity/demo-entity.lua (player prototype)
 
+local MAX_WALK_ATTEMPTS = 5;
+
 function PlaceBuildingTask:achieved (args)
-  return self.placed ~= nil;
+  return self.placed ~= nil or self.failed;
 end
 
 function PlaceBuildingTask:toString()
@@ -37,6 +39,12 @@ function PlaceBuildingTask:tick (args)
     p.x > self.position.x + box.left_top.x - margin and p.x < self.position.x + box.right_bottom.x + margin and
     p.y > self.position.y + box.left_top.y - margin and p.y < self.position.y + box.right_bottom.y + margin;
   if(standing_on_spot or util.distance(p, self.position) > player_build_distance) then
+    self.walk_attempts = (self.walk_attempts or 0) + 1;
+    if(self.walk_attempts > MAX_WALK_ATTEMPTS) then
+      log("Can't get to " .. self.position.x .. ", " .. self.position.y .. " to place " .. self.type .. ", giving up", "WARN");
+      self.failed = true;
+      return;
+    end
     -- stand just above the building; 2 tiles of clearance because
     -- MoveToPointTask stops anywhere within ~1.4 tiles of its target
     args.machine:pushSingle(MoveToPointTask:new{x=self.position.x, y=self.position.y + box.left_top.y - 2})

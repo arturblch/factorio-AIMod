@@ -3,6 +3,7 @@ require 'util'
 require 'util/logger'
 require 'controllers/tasks/build_building_task'
 require 'controllers/tasks/craftRecipeTask'
+require 'controllers/managers/module_resource_source'
 require 'util/inventories'
 
 --[[
@@ -134,15 +135,22 @@ function BuildModuleTask:tick (args)
   -- Geometry offsets are tile centers relative to tile (0, 0); building
   -- offsets are entity centers relative to that tile's top-left corner, so a
   -- 2x2 building at {x=1, y=1} covers geometry tiles 0..1 x 0..1.
+  local module = self.module:instantiate();
   local corner = {x=math.floor(self.location.x), y=math.floor(self.location.y)};
   local tasks = {};
-  for i, building in pairs(self.module.buildings) do
+  for i, building in pairs(module.buildings) do
     local building_position = {x=corner.x + building.position.x, y=corner.y + building.position.y};
     tasks[#tasks + 1] = BuildBuildingTask:new{type=building.type,
                                               building=building,
                                               position=building_position,
                                               direction=building.direction or defines.direction.north}
   end
+  -- light it up right away so it produces while the bot does other things
+  for i, task in ipairs(module:startTasks()) do
+    tasks[#tasks + 1] = task;
+  end
   args.machine:pushStart(tasks);
+  -- not usable until every building stands (see ModuleResourceSource:is_valid)
+  storage.resource_managers[player.index]:register_source(ModuleResourceSource:new{module=module});
   self.goal_set = true;
 end

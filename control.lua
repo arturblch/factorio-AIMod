@@ -35,6 +35,7 @@ local persistent_classes = {
   GroundResourceSource = GroundResourceSource,
   TreeResourceSource = TreeResourceSource,
   CraftResourceSource = CraftResourceSource,
+  ModuleResourceSource = ModuleResourceSource,
   BaseModule = BaseModule,
   Fringe = Fringe,
   GatherResourceTask = GatherResourceTask,
@@ -106,6 +107,12 @@ script.on_configuration_changed(AIMod.init_storage)
 script.on_event(defines.events.on_player_created, function(event)
   AIMod.setup_bot(game.get_player(event.player_index));
 end);
+
+-- Answers to MoveToPointTask's pathfinder requests; the task picks its own up.
+script.on_event(defines.events.on_script_path_request_finished, function(event)
+  storage.path_results = storage.path_results or {};
+  storage.path_results[event.id] = {path=event.path, try_again_later=event.try_again_later};
+end)
 
 script.on_event(defines.events.on_tick, function(event)
   for i, machine in pairs(storage.goal_machines) do

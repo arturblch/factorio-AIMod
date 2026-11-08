@@ -1,4 +1,5 @@
 require 'util/logger'
+require 'util/unreachable'
 
 require 'ground_resource_source'
 require 'tree_resource_source'
@@ -86,7 +87,7 @@ function ResourceManager:find_natural_source(player, type)
         return util.distance(position, a.position) < util.distance(position, b.position);
       end);
       for j, entity in ipairs(found) do
-        if(not is_covered(player, entity)) then
+        if(not is_covered(player, entity) and not Unreachable.is(entity)) then
           if(entity.type == "resource") then
             return GroundResourceSource:new{entity=entity};
           end
