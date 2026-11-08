@@ -75,6 +75,15 @@ function Fakes.player(opts)
     return args.count
   end
   function player.update_selected_entity(position) player.selected_position = position end
+  -- picks a real entity up: gone from the map, one item in the inventory
+  player.mined = {}
+  function player.mine_entity(entity, force)
+    local name = entity.name
+    entity.destroy()
+    inventory.insert({ name = name, count = 1 })
+    player.mined[#player.mined + 1] = name
+    return true
+  end
   return player
 end
 

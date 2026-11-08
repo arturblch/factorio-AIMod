@@ -74,6 +74,14 @@ function ResourceManager:register_source(source)
   self.sources[#self.sources + 1] = source;
 end
 
+function ResourceManager:unregister_source(source)
+  for i = #self.sources, 1, -1 do
+    if(self.sources[i] == source) then
+      table.remove(self.sources, i);
+    end
+  end
+end
+
 function ResourceManager:find_natural_source(player, type)
   local names = natural_sources_for(type);
   if(not names) then

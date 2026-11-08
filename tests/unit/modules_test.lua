@@ -38,6 +38,12 @@ T.describe("BuildModuleTask:canBuildAtPosition", function()
     Lab.entity("wooden-chest", { 12.5, 10.5 })
     T.falsy(task:canBuildAtPosition(player, spot), "can build")
   end)
+
+  T.it("rejects a spot with a cliff in it", function()
+    local spot = iron_spot(10, 10)
+    Lab.surface().create_entity{ name = "cliff", position = { 13, 10 }, cliff_orientation = "west-to-east" }
+    T.falsy(task:canBuildAtPosition(player, spot), "can build")
+  end)
 end)
 
 T.describe("BuildModuleTask:tick", function()
@@ -76,7 +82,47 @@ T.describe("BuildModuleTask:tick", function()
     T.eq(#manager.sources, 1, "registered sources")
     T.eq(getmetatable(manager.sources[1]), ModuleResourceSource, "source class")
     T.truthy(manager.sources[1].module ~= BurnerToFurnaceModule, "the module is a private copy")
-    T.truthy(task:achieved{ player = player }, "achieved")
+    T.falsy(task:achieved{ player = player }, "achieved before the buildings stand")
+    task.built.buildings[1].entity = Lab.entity("burner-mining-drill", { 11, 21 })
+    task.built.buildings[2].entity = Lab.entity("stone-furnace", { 13, 21 })
+    T.truthy(task:achieved{ player = player }, "achieved once every building stands")
+  end)
+
+  T.it("picks up what was built and tries another spot when a building is missing", function()
+    iron_spot(5, 0)
+    iron_spot(20, 0)
+    player = Fakes.player{ surface = Lab.surface(), items = { ["burner-mining-drill"] = 1, ["stone-furnace"] = 1 } }
+    local task = BuildModuleTask:new{ module = BurnerToFurnaceModule }
+    task:tick{ player = player, machine = GoalMachine:new() }
+    T.same(task.location, { x = 5.5, y = 0.5 }, "first spot")
+    -- the drill went up, the furnace didn't
+    task.built.buildings[1].entity = Lab.entity("burner-mining-drill", { 6, 1 })
+    player.inventory.remove{ name = "burner-mining-drill", count = 1 }
+    T.falsy(task:achieved{ player = player }, "achieved with a building missing")
+
+    task:tick{ player = player, machine = GoalMachine:new() }
+    T.same(player.mined, { "burner-mining-drill" }, "picked up")
+    T.eq(player.inventory.get_item_count("burner-mining-drill"), 1, "drill back in the inventory")
+    T.eq(#manager.sources, 0, "module source dropped")
+    T.falsy(task.failed, "failed")
+
+    task:tick{ player = player, machine = GoalMachine:new() }
+    T.same(task.location, { x = 20.5, y = 0.5 }, "second spot, away from the first")
+  end)
+
+  T.it("gives up after three spots and says so at the end", function()
+    for _, x in ipairs({ 5, 18, 31 }) do iron_spot(x, 0) end
+    player = Fakes.player{ surface = Lab.surface(), items = { ["burner-mining-drill"] = 1, ["stone-furnace"] = 1 } }
+    local task = BuildModuleTask:new{ module = BurnerToFurnaceModule }
+    for attempt = 1, 3 do
+      task:tick{ player = player, machine = GoalMachine:new() } -- queues the build at a new spot
+      T.truthy(task.built, "built queued, attempt " .. attempt)
+      task:tick{ player = player, machine = GoalMachine:new() } -- nothing stood up: retry
+    end
+    T.truthy(task.failed, "failed")
+    T.truthy(task:achieved{ player = player }, "achieved (gave up)")
+    T.same(storage.failed_goals[1], { "BurnerToFurnace" }, "recorded for the final message")
+    T.eq(#player.printed, 1, "one message")
   end)
 
   T.it("crafts missing buildings first and keeps the spot", function()

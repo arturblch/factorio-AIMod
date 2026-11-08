@@ -9,14 +9,71 @@ require 'util/inventories'
 --[[
   BuildModuleTask
   Finds a spot for a module (a small fixed layout of buildings), makes sure
-  the buildings are in the inventory and then builds them.
+  the buildings are in the inventory and then builds them. If a building
+  couldn't be placed, the ones that were are picked up again and the module
+  is tried at another spot, MAX_ATTEMPTS times in all.
    - module: BaseModule; the module to build
 ]]
 BuildModuleTask = Task:new()
 local log = Logger.makeLogger("BuildModuleTask");
 
+local MAX_ATTEMPTS = 3;
+local BAD_SPOT_RADIUS = 8; -- don't retry closer than this to a spot that failed
+
+-- Done once every building of the module stands, or when it gave up.
+-- (Only checked when this task is on top again, i.e. after the build tasks.)
 function BuildModuleTask:achieved (args)
-  return self.goal_set or self.failed;
+  if(self.failed) then
+    return true;
+  end
+  return self.built ~= nil and self.built:allPlaced();
+end
+
+-- Remembers a module that couldn't be built, for the final message.
+local function record_failure(player, name)
+  storage.failed_goals = storage.failed_goals or {};
+  local list = storage.failed_goals[player.index] or {};
+  list[#list + 1] = name;
+  storage.failed_goals[player.index] = list;
+end
+
+function BuildModuleTask:fail(player, message)
+  log(message, "WARN");
+  player.print("AIMod: " .. message);
+  record_failure(player, self.module.name);
+  self.failed = true;
+end
+
+-- Called when the build tasks are done but a building is missing.
+function BuildModuleTask:retryElsewhere(player)
+  local missing = {};
+  for i, building in ipairs(self.built.buildings) do
+    local entity = building.entity;
+    if(entity and entity.valid) then
+      player.mine_entity(entity, true); -- back into the inventory, fuel included
+    else
+      missing[#missing + 1] = building.type;
+    end
+  end
+  storage.resource_managers[player.index]:unregister_source(self.source);
+  self.bad_spots = self.bad_spots or {};
+  self.bad_spots[#self.bad_spots + 1] = self.location;
+  self.attempts = (self.attempts or 0) + 1;
+  log(self.module.name .. " at " .. self.location.x .. ", " .. self.location.y .. " is missing " ..
+    table.concat(missing, ", ") .. " (attempt " .. self.attempts .. ")", "WARN");
+  self.location, self.built, self.source, self.goal_set = nil, nil, nil, false;
+  if(self.attempts >= MAX_ATTEMPTS) then
+    self:fail(player, "could not build " .. self.module.name .. " after " .. self.attempts .. " attempts");
+  end
+end
+
+function BuildModuleTask:isBadSpot(position)
+  for i, spot in ipairs(self.bad_spots or {}) do
+    if(util.distance(spot, position) < BAD_SPOT_RADIUS) then
+      return true;
+    end
+  end
+  return false;
 end
 
 function BuildModuleTask:toString()
@@ -37,6 +94,7 @@ function BuildModuleTask:canBuildAtPosition(player, position)
   --  a) it's not water (unless it should be)
   --  b) it has the resource it needs (if it need one)
   --  c) none of our buildings is already there
+  --  d) no cliff runs through it (cliffs can't be cleared by hand)
   for i, item in pairs(self.module.geometry) do
     local offset = item.position;
     local offsetPosition = {x=position.x + offset.x + TILE_OFFSET, y=position.y + offset.y + TILE_OFFSET};
@@ -55,6 +113,10 @@ function BuildModuleTask:canBuildAtPosition(player, position)
       if(entity.type ~= "character") then
         return false;
       end
+    end
+    local tile_area = {{offsetPosition.x - 0.5, offsetPosition.y - 0.5}, {offsetPosition.x + 0.5, offsetPosition.y + 0.5}};
+    if(player.surface.count_entities_filtered{area=tile_area, type="cliff", limit=1} > 0) then
+      return false;
     end
     if(item.resource ~= nil) then
       local entities = player.surface.find_entities_filtered{position=offsetPosition, type="resource"}
@@ -85,7 +147,7 @@ function BuildModuleTask:findLocation(player)
     end)
     for j, resource in ipairs(resources) do
       local position = resource.position;
-      if(self:canBuildAtPosition(player, position)) then
+      if(not self:isBadSpot(position) and self:canBuildAtPosition(player, position)) then
         return {x=position.x, y=position.y};
       end
     end
@@ -96,18 +158,21 @@ end
 function BuildModuleTask:tick (args)
   local player = args.player;
 
+  if(self.built) then
+    -- the build tasks are done but achieved() said a building is missing
+    self:retryElsewhere(player);
+    return;
+  end
+
   if(not self.location) then
     if(self.module.resource == nil) then
-      log("Don't know where to put " .. self.module.name .. ": it needs no resource", "ERROR");
-      self.failed = true;
+      self:fail(player, "don't know where to put " .. self.module.name .. ": it needs no resource");
       return;
     end
     self.location = self:findLocation(player);
     if(not self.location) then
-      log("Cannot build " .. self.module.name .. ": no suitable " .. self.module.resource ..
-        " spot within " .. SEARCH_RADII[#SEARCH_RADII] .. " tiles", "WARN");
-      player.print("AIMod: no place to build " .. self.module.name);
-      self.failed = true;
+      self:fail(player, "no place to build " .. self.module.name .. ": no suitable " ..
+        self.module.resource .. " spot within " .. SEARCH_RADII[#SEARCH_RADII] .. " tiles");
       return;
     end
     log("Building " .. self.module.name .. " at " .. self.location.x .. ", " .. self.location.y, "INFO");
@@ -151,6 +216,8 @@ function BuildModuleTask:tick (args)
   end
   args.machine:pushStart(tasks);
   -- not usable until every building stands (see ModuleResourceSource:is_valid)
-  storage.resource_managers[player.index]:register_source(ModuleResourceSource:new{module=module});
+  self.source = ModuleResourceSource:new{module=module};
+  storage.resource_managers[player.index]:register_source(self.source);
+  self.built = module;
   self.goal_set = true;
 end

@@ -19,6 +19,7 @@ local log = Logger.makeLogger("PlaceBuildingTask");
 local player_build_distance = 6; --see base/prototypes/entity/demo-entity.lua (player prototype)
 
 local MAX_WALK_ATTEMPTS = 5;
+local BLOCKED_TICKS = 300; -- 5 s next to a spot that stays blocked (cliff, unreachable tree)
 
 function PlaceBuildingTask:achieved (args)
   return self.placed ~= nil or self.failed;
@@ -49,6 +50,11 @@ function PlaceBuildingTask:tick (args)
     -- MoveToPointTask stops anywhere within ~1.4 tiles of its target
     args.machine:pushSingle(MoveToPointTask:new{x=self.position.x, y=self.position.y + box.left_top.y - 2})
   else
+    if(Inventories.total_craftable_count(player, self.type) == 0) then
+      log("No " .. self.type .. " in the inventory to place, giving up", "WARN");
+      self.failed = true;
+      return;
+    end
     if(player.surface.can_place_entity{name=self.type, position=self.position, direction=self.direction, force=player.force}) then
       local inventories = Inventories.get_all_inventories(player);
       for i, inv in ipairs(inventories) do
@@ -70,10 +76,17 @@ function PlaceBuildingTask:tick (args)
           end
         end
       end
-    elseif(not self.reported) then
-      self.reported = true;
-      log("Unable to place " .. self.type .. " at " .. self.position.x .. ", " .. self.position.y, "WARN");
-      player.print("Unable to place building")
+    else
+      self.blocked_since = self.blocked_since or game.tick;
+      if(not self.reported) then
+        self.reported = true;
+        log("Unable to place " .. self.type .. " at " .. self.position.x .. ", " .. self.position.y, "WARN");
+        player.print("Unable to place building")
+      end
+      if(game.tick - self.blocked_since >= BLOCKED_TICKS) then
+        log("The spot for " .. self.type .. " stays blocked, giving up", "WARN");
+        self.failed = true;
+      end
     end
   end
 end

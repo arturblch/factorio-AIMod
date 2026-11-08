@@ -145,9 +145,10 @@ foreach ($s in ($Seed -split ',' | ForEach-Object { [uint32]$_.Trim() })) {
   if ($p.ExitCode -ne 0 -or $errors.Count -gt 0) {
     $failed++
     Write-Host "seed ${s}: FAILED (exit $($p.ExitCode))" -ForegroundColor Red
-    $test | Where-Object { $_ -match 'STORAGE PROBLEM' }
+    $explained = @($test | Where-Object { $_ -match 'STORAGE PROBLEM|^GAVE UP' })
+    $explained
     $errors | Select-Object -First 10
-    if ($errors.Count -eq 0 -and -not ($test -match 'STORAGE PROBLEM')) { $lines | Select-Object -Last 15 }
+    if ($errors.Count -eq 0 -and $explained.Count -eq 0) { $lines | Select-Object -Last 15 }
   } elseif ($completed) {
     Write-Host "seed ${s}: OK, $completed" -ForegroundColor Green
   } else {

@@ -139,8 +139,15 @@ script.on_event(defines.events.on_tick, function(event)
   end
   if storage.goals_done and storage.goals_done[1] and not t.completed then
     t.completed = true
-    log("[test] COMPLETED at t=" .. event.tick)
+    local failed = storage.failed_goals and storage.failed_goals[1] or {}
     snapshot(event.tick, player, machine)
-    if check_storage(event.tick) then script.finish_test(true) end
+    if #failed > 0 then
+      -- the goal list ran out, but some modules were given up on
+      log("[test] GAVE UP at t=" .. event.tick .. " on: " .. table.concat(failed, ", "))
+      script.finish_test(false)
+    else
+      log("[test] COMPLETED at t=" .. event.tick)
+      if check_storage(event.tick) then script.finish_test(true) end
+    end
   end
 end)

@@ -96,7 +96,12 @@ function AIMod.tick_bot(player, machine)
     machine:tick{ player=player }
   elseif(not storage.goals_done[player.index]) then
     storage.goals_done[player.index] = true
-    player.print("Completed goals")
+    local failed = storage.failed_goals and storage.failed_goals[player.index]
+    if(failed and #failed > 0) then
+      player.print("Finished goals, could not build: " .. table.concat(failed, ", "))
+    else
+      player.print("Completed goals")
+    end
   end
 end
 

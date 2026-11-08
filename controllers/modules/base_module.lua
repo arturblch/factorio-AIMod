@@ -38,6 +38,16 @@ function BaseModule:entity(index)
   return nil;
 end
 
+-- Every building of the module stands.
+function BaseModule:allPlaced()
+  for i, building in ipairs(self.buildings) do
+    if(not self:entity(i)) then
+      return false;
+    end
+  end
+  return true;
+end
+
 -- All buildings stand and none of them ran out of ore to mine.
 function BaseModule:isOperational()
   for i, building in ipairs(self.buildings) do
