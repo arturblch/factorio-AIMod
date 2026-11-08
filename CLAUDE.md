@@ -22,6 +22,8 @@ Scenario runs (`tests/scenario_test.lua`): the bot plays AIPlay on each map seed
 
 Logs: `%TEMP%\aimod-headless\run-<seed>.log` / `unit.log` (Factorio stdout), and the bot's log `...\data\script-output\output.log`. In a normal game the bot log is `%APPDATA%\Factorio\script-output\output.log`.
 
+A windowed run is possible only through Steam, and only after asking the user (it opens a window on their desktop and shows them as in-game): `steam.exe -applaunch 427520 --config <tmp>\config.ini --mod-directory <tmp>\mods --load-scenario AIMod/AIPlay --disable-audio`, with `<tmp>` laid out like the headless work folder (isolated `write-data`, mod copy with `require 'tests/scenario_test'` appended, so its `[test]` lines land in `<tmp>\data\factorio-current.log`). Close it with `CloseMainWindow()`.
+
 Neither test mode nor `--benchmark` can save a game (`game.auto_save` does nothing there), so save/load is covered by the storage audit in `scenario_test.lua`, not by a real round trip.
 
 API reference matching the installed version: `C:\Program Files (x86)\Steam\steamapps\common\Factorio\doc-html\runtime-api.json`. Check it rather than memory — 2.1 differs from 2.0 in places this code touches (e.g. `recipe.has_category()` instead of `recipe.category`, `defines.inventory.crafter_input` instead of `furnace_source`).
