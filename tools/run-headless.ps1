@@ -1,25 +1,32 @@
 <#
 .SYNOPSIS
-  Plays the AIPlay scenario headlessly with a real player and checks that the
-  bot completes its goals.
+  Runs AIMod's tests headlessly: the unit tests (-Unit) or the AIPlay
+  scenario with a real player (default).
 
 .DESCRIPTION
   The Steam build of Factorio refuses to start its GUI outside of Steam, but
-  headless modes work. For every map seed this script:
-    1. copies the mod into a temp work folder (your %APPDATA%\Factorio saves,
-       settings and mod list are never touched),
-    2. appends `require 'tests/scenario_test'` to the copy's control.lua,
-    3. runs `factorio --test-scenario AIMod/AIPlay` (headless, with a player)
-       until the bot completes its goals or -Ticks pass,
-    4. prints the bot's progress ([test] lines) and its own output.log.
-  Exit code is 0 when the bot completed its goals on every seed, 1 otherwise.
+  headless modes work. The script copies the mod into a temp work folder
+  (your %APPDATA%\Factorio saves, settings and mod list are never touched),
+  appends a test entry point to the copy's control.lua and starts
+  `factorio --test-scenario AIMod/AIPlay` (headless, with a player).
 
+  -Unit: tests/unit_runner.lua runs tests/unit/*_test.lua on the first tick,
+    with the bot switched off. Takes a few seconds.
+  default: tests/scenario_test.lua lets the bot play, once per map seed,
+    until it completes its goals or -Ticks pass, and prints its progress.
+
+  Exit code is 0 when everything passed, 1 otherwise.
+
+.EXAMPLE
+  powershell -ExecutionPolicy Bypass -File tools\run-headless.ps1 -Unit
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File tools\run-headless.ps1
 .EXAMPLE
-  powershell -ExecutionPolicy Bypass -File tools\run-headless.ps1 -Seed 1234567,42,987654,2024 -Brief
+  powershell -ExecutionPolicy Bypass -File tools\run-headless.ps1 -Seed "1234567,42,987654,2024" -Brief
 #>
 param(
+  # run the unit tests instead of playing the scenario
+  [switch]$Unit,
   # comma separated, one run per seed; same seed = same map, so runs are
   # comparable (a string because `powershell -File` can't pass arrays)
   [string]$Seed = "1234567",
@@ -29,7 +36,7 @@ param(
   [string]$WorkDir = (Join-Path $env:TEMP "aimod-headless"),
   # print every goal transition instead of the first/last few
   [switch]$Full,
-  # one result line per seed
+  # one result line per seed; with -Unit only failures and the summary
   [switch]$Brief
 )
 $ErrorActionPreference = "Stop"
@@ -50,7 +57,8 @@ New-Item -ItemType Directory -Force $modCopy, $data | Out-Null
 
 robocopy $repo $modCopy /E /XD .git .vscode tools /XF PR_NOTES.md *.zip /NFL /NDL /NJH /NJS /NP | Out-Null
 if ($LASTEXITCODE -ge 8) { throw "robocopy failed with code $LASTEXITCODE" }
-Add-Content -Path (Join-Path $modCopy "control.lua") -Value "`r`nrequire 'tests/scenario_test'" -Encoding Ascii
+$entryPoint = if ($Unit) { "tests/unit_runner" } else { "tests/scenario_test" }
+Add-Content -Path (Join-Path $modCopy "control.lua") -Value "`r`nrequire '$entryPoint'" -Encoding Ascii
 
 $cfg = Join-Path $WorkDir "config.ini"
 @"
@@ -65,6 +73,43 @@ $testPrefix = '^\s*[\d.]+ Script @__AIMod__/tests/scenario_test\.lua:\d+: \[test
 $errorPattern = '^\s*[\d.]+ Error|non-recoverable|Error while running'
 $botLogPath = Join-Path $data "script-output\output.log"
 $failed = 0
+
+# --- unit tests ----------------------------------------------------------------
+if ($Unit) {
+  $runLog = Join-Path $WorkDir "unit.log"
+  $all = @("--config", "`"$cfg`"", "--mod-directory", "`"$mods`"",
+    "--test-scenario", "AIMod/AIPlay", "--test-ticks", "600")
+  $p = Start-Process -FilePath $Factorio -ArgumentList $all -NoNewWindow -Wait -PassThru -RedirectStandardOutput $runLog
+  $lines = @(Get-Content $runLog -Encoding UTF8)
+
+  # "[unit] ..." lines; a failure's traceback follows on lines without a timestamp
+  $unitPrefix = '^\s*[\d.]+ Script @__AIMod__/[^:]+:\d+: \[unit\] '
+  $results = New-Object System.Collections.Generic.List[string]
+  $inEntry = $false
+  foreach ($line in $lines) {
+    if ($line -match $unitPrefix) { $results.Add(($line -replace $unitPrefix, '')); $inEntry = $true }
+    elseif ($inEntry -and $line -notmatch '^\s*[\d.]+ ') { $results[$results.Count - 1] += "`n" + $line }
+    else { $inEntry = $false }
+  }
+  foreach ($entry in $results) {
+    if ($entry -match '^FAIL') { Write-Host $entry -ForegroundColor Red }
+    elseif ($entry -match '^SUMMARY') { }
+    elseif (-not $Brief) { Write-Host $entry -ForegroundColor DarkGray }
+  }
+
+  $summary = $results | Where-Object { $_ -match '^SUMMARY' } | Select-Object -First 1
+  $errors = @($lines | Where-Object { $_ -match $errorPattern })
+  if ($p.ExitCode -ne 0 -or $errors.Count -gt 0 -or -not $summary) {
+    if ($summary) { Write-Host $summary -ForegroundColor Red }
+    else {
+      Write-Host "Unit tests did not run to the end (exit $($p.ExitCode))" -ForegroundColor Red
+      if ($errors.Count -gt 0) { $errors | Select-Object -First 10 } else { $lines | Select-Object -Last 20 }
+    }
+    exit 1
+  }
+  Write-Host $summary -ForegroundColor Green
+  exit 0
+}
 
 foreach ($s in ($Seed -split ',' | ForEach-Object { [uint32]$_.Trim() })) {
   $runLog = Join-Path $WorkDir "run-$s.log"
