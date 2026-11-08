@@ -4,7 +4,7 @@ require 'util'
 require 'controllers/tasks/moveToPointTask'
 require 'util/unreachable'
 
-local range = 4; -- Approx player reach range
+-- Reach comes from the game (can_reach_entity), not from a constant.
 MineEntityTask = Task:new()
 
 function MineEntityTask:achieved (args)
