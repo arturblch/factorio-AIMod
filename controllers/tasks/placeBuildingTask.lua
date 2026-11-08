@@ -26,7 +26,7 @@ end
 
 function PlaceBuildingTask:tick (args)
   local player = args.player;
-  local prototype = game.entity_prototypes[self.type];
+  local prototype = prototypes.entity[self.type];
   if(util.distance(player.position, self.position) > player_build_distance) then
     args.machine:pushSingle(MoveToPointTask:new{x=self.position.x, y=self.position.y + prototype.collision_box.left_top.y - 1})
   else

@@ -24,5 +24,5 @@ end
 function GatherResourceTask:tick (args)
   -- should use the player's resource manager to do the gathering!
   local player = args.player;
-  global.resource_managers[player.index]:get_resources(args.player, self.type, self.qty);
+  storage.resource_managers[player.index]:get_resources(args.player, self.type, self.qty);
 end

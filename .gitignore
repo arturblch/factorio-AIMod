@@ -1,0 +1,5 @@
+# packaged mod builds
+*.zip
+
+# local working notes for PR descriptions
+PR_NOTES.md

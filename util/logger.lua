@@ -12,10 +12,12 @@ local levelsToIndex = {}
 for key,val in pairs( Logger.LEVELS ) do levelsToIndex[ val ] = key end
 
 -- DEBUG, INFO, WARN, ERROR
+-- Written to <user data dir>/script-output/output.log
+-- (%APPDATA%\Factorio\script-output\output.log on Windows).
 local path = "output.log";
 
 function Logger.log(message)
-  game.write_file(path, message .. "\n", true);
+  helpers.write_file(path, message .. "\n", true);
 end
 
 function Logger.logAtLevel(level, message)

@@ -33,7 +33,7 @@ function CraftRecipeTask:tick (args)
     if(player.get_craftable_count(recipe.name) < self.qty) then
       --figure out what ingredients are needed
       local required = {};
-      local inv = player.get_inventory(defines.inventory.player_main);
+      local inv = player.get_inventory(defines.inventory.character_main);
       for i, ingredient in pairs(recipe.ingredients) do
         if(ingredient.type ~= "item") then
           log("Not sure how to get " .. ingredient.name .. " - it's not an item!", "WARN");

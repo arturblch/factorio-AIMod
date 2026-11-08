@@ -20,8 +20,23 @@ end
 function MoveToPointTask:achieved (args)
   local player = args.player;
   local maxDistance = (2 * (accuracy^2))^0.5
-  --TODO if (debug) delete the feeler entities!
-  return util.distance(player.position, {x=self.x, y=self.y}) < maxDistance
+  local reached = util.distance(player.position, {x=self.x, y=self.y}) < maxDistance
+  if(reached) then
+    self:destroyFeelers();
+  end
+  return reached
+end
+
+-- Debug feelers are LuaRenderObjects (see tick); plain `true` placeholders
+-- are used when debug drawing is off.
+function MoveToPointTask:destroyFeelers()
+  if(not self.feelers) then return end
+  for i, feeler in pairs(self.feelers) do
+    if(type(feeler) ~= "boolean" and feeler.valid) then
+      feeler.destroy();
+    end
+  end
+  self.feelers = nil;
 end
 
 function MoveToPointTask:getBearingToTarget(player, target)
@@ -96,7 +111,13 @@ function MoveToPointTask:tick (args)
     self.feelers = {};
     for i=1, num_projections do
       if(debug) then
-        local feeler = player.surface.create_entity{name="pathing-feeler", position=player.position};
+        local feeler = rendering.draw_circle{
+          color={r=1, g=0.5, b=0, a=0.8},
+          radius=feeler_width / 2,
+          width=2,
+          target=player.position,
+          surface=player.surface
+        };
         self.feelers[#self.feelers + 1] = feeler;
       else
         self.feelers[#self.feelers + 1] = true;
@@ -138,10 +159,10 @@ function MoveToPointTask:tick (args)
         log("Terrain collision detected at (" .. tile_position.x .. ", ".. tile_position.y ..") -> " .. relative_bearing, "DEBUG");
         --self.current_bearing = self.current_bearing - relative_bearing;
       end
-      --tree,stone-rock,small-rock
-      for z, type in pairs({{"type", "tree"}, {"name", "stone-rock"}, {"name", "small-rock"}}) do
+      --trees and rocks (in 2.0 small-rock is only a decorative, not an obstacle)
+      for z, filter in pairs({{"type", "tree"}, {"name", {"huge-rock", "big-rock", "big-sand-rock"}}}) do
         local params = {area=collision_area}
-        params[type[1]] = type[2];
+        params[filter[1]] = filter[2];
         local entities = player.surface.find_entities_filtered(params);
         if(#entities > 0) then
           --has_collision = true;
@@ -157,7 +178,7 @@ function MoveToPointTask:tick (args)
       end
     end
     if(debug) then
-      feeler.teleport(new_position);
+      feeler.target = new_position;
     end
   end
   self.current_bearing = self.current_bearing - total_steering_force;

@@ -1,10 +1,11 @@
 {
   "name": "AIMod",
-  "version": "0.0.1",
-  "factorio_version": "0.13",
+  "version": "0.1.0",
+  "factorio_version": "2.1",
   "title": "SubmittedDenied's AIMod",
   "author": "SubmittedDenied",
   "contact": "",
-  "homepage": "",
-  "description": "Mod that plays the game for you!"
+  "homepage": "https://github.com/arturblch/factorio-AIMod",
+  "description": "Mod that plays the game for you!",
+  "dependencies": ["base >= 2.1"]
 }

@@ -1,9 +1,10 @@
 
 Inventories = {};
 
+-- The quickbar stopped being a separate inventory in 0.17, so the character's
+-- main inventory is the only place items live now.
 local inventory_types = {
-  defines.inventory.player_quickbar,
-  defines.inventory.player_main
+  defines.inventory.character_main
 };
 
 function Inventories.get_all_inventories(player)

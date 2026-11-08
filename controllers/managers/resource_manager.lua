@@ -24,8 +24,8 @@ local starting_resources = {
 }
 function ResourceManager:initialize(player)
   local search_area = {{player.position.x - range, player.position.y - range}, {player.position.x + range, player.position.y + range}};
-  for source, resource in ipairs(starting_resources) do
-    local entities = player.surface.find_entities_filtered{area=search_area, name=source}
+  for i, resource in ipairs(starting_resources) do
+    local entities = player.surface.find_entities_filtered{area=search_area, name=resource}
 
     for i, entity in ipairs(entities) do
       self.sources[#self.sources + 1] = GroundResourceSource:new{entity=entity};
@@ -63,6 +63,6 @@ end
 function ResourceManager:get_resources(player, type, max_qty)
   local source = self:best_resource_source(player, type);
   if(source) then
-    source:gather{qty=max_qty, player=player, machine=global.goal_machines[player.index]}
+    source:gather{qty=max_qty, player=player, machine=storage.goal_machines[player.index]}
   end
 end

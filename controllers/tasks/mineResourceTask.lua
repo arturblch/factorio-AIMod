@@ -6,7 +6,7 @@ MineResourceTask = Task:new()
 
 function MineResourceTask:achieved (args)
   local player = args.player;
-  return player.get_inventory(defines.inventory.player_main).get_item_count(self.type) >= self.qty
+  return player.get_inventory(defines.inventory.character_main).get_item_count(self.type) >= self.qty
 end
 
 function MineResourceTask:tick (args)

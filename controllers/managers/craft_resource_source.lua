@@ -15,7 +15,7 @@ function CraftResourceSource:find_recipe(type)
   -- do we have any recipes that are craftable that result in {{type}}
   log("Attempting to craft recipe ".. type, "INFO");
   for name, recipe in pairs(self.player.force.recipes) do
-    if(recipe.enabled and recipe.category == "crafting") then
+    if(recipe.enabled and recipe.has_category("crafting")) then
       for i, product in ipairs(recipe.products) do
         if(product.name == type) then
           return recipe;
