@@ -171,7 +171,7 @@ function MoveToPointTask:tick (args)
           for j, entity in pairs(entities) do
             local entity_bearing = self:getBearingToTarget(player, entity.position);
             local relative_bearing = entity_bearing - self.current_bearing;
-            log("Entity collision detected at (" .. entity.position.x .. ", ".. entity.position.y ..") -> " .. relative_bearing, "INFO");
+            log("Entity collision detected at (" .. entity.position.x .. ", ".. entity.position.y ..") -> " .. relative_bearing, "DEBUG");
             total_steering_force = total_steering_force + self:multiplyBearing(relative_bearing, i);
           end
         end
@@ -182,8 +182,8 @@ function MoveToPointTask:tick (args)
     end
   end
   self.current_bearing = self.current_bearing - total_steering_force;
-  if(true or total_steering_force > 0) then
-    log("Applying steering force of " .. total_steering_force, "INFO");
+  if(total_steering_force ~= 0) then
+    log("Applying steering force of " .. total_steering_force, "DEBUG");
   end
   self:clampBearing();
   local direction = self:getDirection(self.current_bearing);

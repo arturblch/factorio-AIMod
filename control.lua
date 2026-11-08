@@ -58,20 +58,20 @@ for name, class in pairs(persistent_classes) do
   script.register_metatable(name, class)
 end
 
-local done = false;
-local once = true;
+-- Entry points shared by the event handlers below and by tests/harness.lua,
+-- which drives the same bot headlessly with a character instead of a player.
+AIMod = { classes = persistent_classes }
 
-local function init_storage()
+function AIMod.init_storage()
   storage.resource_managers = storage.resource_managers or {};
   storage.goal_machines = storage.goal_machines or {};
+  -- per player: start position logged / "Completed goals" announced. Kept in
+  -- storage rather than in Lua locals so every client agrees (no desyncs).
+  storage.start_logged = storage.start_logged or {};
+  storage.goals_done = storage.goals_done or {};
 end
 
-script.on_init(init_storage)
-script.on_configuration_changed(init_storage)
-
--- start 229.7, 146.1
-script.on_event(defines.events.on_player_created, function(event)
-  local player = game.get_player(event.player_index);
+function AIMod.setup_bot(player)
   local resource_manager = ResourceManager:new();
   resource_manager:initialize(player);
 
@@ -83,6 +83,28 @@ script.on_event(defines.events.on_player_created, function(event)
 
   storage.resource_managers[player.index] = resource_manager;
   storage.goal_machines[player.index] = goal_machine;
+end
+
+function AIMod.tick_bot(player, machine)
+  if(not storage.start_logged[player.index]) then
+    Logger.log("player start position " .. player.position.x .. ", " .. player.position.y);
+    storage.start_logged[player.index] = true;
+  end
+
+  if(not machine:achieved{ player=player }) then
+    machine:tick{ player=player }
+  elseif(not storage.goals_done[player.index]) then
+    storage.goals_done[player.index] = true
+    player.print("Completed goals")
+  end
+end
+
+script.on_init(AIMod.init_storage)
+script.on_configuration_changed(AIMod.init_storage)
+
+-- start 229.7, 146.1
+script.on_event(defines.events.on_player_created, function(event)
+  AIMod.setup_bot(game.get_player(event.player_index));
 end);
 
 script.on_event(defines.events.on_tick, function(event)
@@ -92,17 +114,7 @@ script.on_event(defines.events.on_tick, function(event)
     -- No character means the player is dead, in a cutscene or in map/editor
     -- mode: walking, mining and crafting are all impossible, so just wait.
     if(player and player.valid and player.character) then
-      if(once) then
-        Logger.log("player start position " .. player.position.x .. ", " .. player.position.y);
-        once = false;
-      end
-
-      if(not machine:achieved{ player=player }) then
-        machine:tick{ player=player }
-      elseif(not done) then
-        done = true
-        player.print("Completed goals")
-      end
+      AIMod.tick_bot(player, machine)
     end
   end
 end)
