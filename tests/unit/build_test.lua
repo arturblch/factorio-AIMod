@@ -69,6 +69,25 @@ T.describe("PlaceBuildingTask", function()
     T.eq(player.inventory.get_item_count("burner-mining-drill"), 1, "item kept")
   end)
 
+  T.it("waits for a building that is still being crafted", function()
+    local player = Fakes.player{ surface = Lab.surface(), position = { x = 10, y = 7 },
+      crafting_queue = { { recipe = "burner-mining-drill", count = 1, prerequisite = false } } }
+    local machine = GoalMachine:new()
+    local task = place_drill()
+    task:tick{ player = player, machine = machine }
+    T.falsy(task.failed, "failed")
+    T.falsy(task:achieved{ player = player }, "achieved")
+    T.same(Fakes.goals(machine), {}, "tasks")
+  end)
+
+  T.it("makes room for a crafted building that has no slot to come out to", function()
+    local player = Fakes.player{ surface = Lab.surface(), position = { x = 10, y = 7 }, slots = 1, items = { ["stone-brick"] = 100 },
+      crafting_queue = { { recipe = "burner-mining-drill", count = 1, prerequisite = false } } }
+    local machine = GoalMachine:new()
+    place_drill():tick{ player = player, machine = machine }
+    T.same(Fakes.goal_classes(machine), { "MakeRoomTask" }, "tasks")
+  end)
+
   T.it("gives up when the item isn't in the inventory", function()
     local player = Fakes.player{ surface = Lab.surface(), position = { x = 10, y = 7 } }
     local task = place_drill()

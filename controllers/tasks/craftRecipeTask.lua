@@ -10,12 +10,16 @@ require 'controllers/tasks/gatherResourcesTask'
   gathered first; intermediates are left to the game's hand-craft queue.
    - recipe: string; The name of the recipe to craft
    - qty: number; How many times to craft the recipe
+   - background: boolean; (Optional) done as soon as the crafts are queued:
+                 the game crafts while the bot walks on, and whoever uses
+                 the items waits for them (see PlaceBuildingTask). Without
+                 it the bot stands still until the queue is empty.
 ]]
 CraftRecipeTask = Task:new{goalSet=false}
 local log = Logger.makeLogger("CraftRecipeTask");
 
 function CraftRecipeTask:achieved (args)
-  return self.started and args.player.crafting_queue_size == 0;
+  return self.started and (self.background or args.player.crafting_queue_size == 0);
 end
 
 function CraftRecipeTask:toString()

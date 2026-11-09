@@ -259,13 +259,15 @@ function BuildModuleTask:tick (args)
   for i, building in pairs(self.module.buildings) do
     required_buildings[building.type] = (required_buildings[building.type] or 0) + 1;
   end
+  -- what is still in the hand-craft queue counts: it is crafted on the way
+  -- to the spot, and PlaceBuildingTask waits for it if need be
   local missing = false;
   for type, count in pairs(required_buildings) do
-    local inv_count = Inventories.total_craftable_count(player, type);
+    local inv_count = Inventories.count_with_queue(player, type);
     if(inv_count < count) then
       local required_count = count - inv_count;
       log("We require " .. required_count .. " more " .. type .. " for this module", "INFO");
-      args.machine:pushSingle(CraftRecipeTask:new{recipe=type, qty=required_count});
+      args.machine:pushSingle(CraftRecipeTask:new{recipe=type, qty=required_count, background=true});
       missing = true;
     end
   end

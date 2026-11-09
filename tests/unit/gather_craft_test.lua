@@ -82,6 +82,27 @@ T.describe("CraftRecipeTask", function()
   end)
 end)
 
+T.describe("CraftRecipeTask in the background", function()
+  local function queued_player()
+    -- the fake's queue doesn't run: it stays as long as the test looks
+    return Fakes.player{ craftable = 2, crafting_queue = { { recipe = "burner-mining-drill", count = 2, prerequisite = false } } }
+  end
+
+  T.it("is done as soon as the crafts are queued", function()
+    local player = queued_player()
+    local task = CraftRecipeTask:new{ recipe = "burner-mining-drill", qty = 2, background = true }
+    task:tick{ player = player, machine = GoalMachine:new() }
+    T.truthy(task:achieved{ player = player }, "achieved")
+  end)
+
+  T.it("otherwise waits for the queue", function()
+    local player = queued_player()
+    local task = CraftRecipeTask:new{ recipe = "burner-mining-drill", qty = 2 }
+    task:tick{ player = player, machine = GoalMachine:new() }
+    T.falsy(task:achieved{ player = player }, "achieved")
+  end)
+end)
+
 T.describe("CraftRecipeTask with a full inventory", function()
   -- a finished craft waits for a free slot, so the bot makes room first
   T.it("makes room for the product first", function()

@@ -55,6 +55,14 @@ function PlaceBuildingTask:tick (args)
     args.machine:pushSingle(MoveToPointTask:new{x=self.position.x, y=self.position.y + box.left_top.y - 2})
   else
     if(Inventories.total_craftable_count(player, self.type) == 0) then
+      if(Inventories.count_with_queue(player, self.type) > 0) then
+        -- still being hand-crafted: wait for it here. A finished craft only
+        -- comes out when there is a slot for it.
+        if(not Inventories.has_room_for(player, self.type)) then
+          args.machine:pushSingle(MakeRoomTask:new{item=self.type}); -- a global, see MineResourceTask:tick
+        end
+        return;
+      end
       log("No " .. self.type .. " in the inventory to place, giving up", "WARN");
       self.failed = true;
       return;

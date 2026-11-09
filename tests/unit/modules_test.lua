@@ -197,6 +197,23 @@ T.describe("BuildModuleTask:tick", function()
     T.falsy(task:achieved{ player = player }, "achieved")
   end)
 
+  T.it("crafts buildings in the background", function()
+    iron_spot(10, 20)
+    player = Fakes.player{ surface = Lab.surface(), items = { ["stone-furnace"] = 1 } }
+    local machine = GoalMachine:new()
+    BuildModuleTask:new{ module = BurnerToFurnaceModule }:tick{ player = player, machine = machine }
+    T.truthy(Fakes.goals(machine)[1].background, "background")
+  end)
+
+  T.it("counts buildings still in the craft queue and goes to build", function()
+    iron_spot(10, 20)
+    player = Fakes.player{ surface = Lab.surface(), items = { ["stone-furnace"] = 1 },
+      crafting_queue = { { recipe = "burner-mining-drill", count = 1, prerequisite = false } } }
+    local machine = GoalMachine:new()
+    BuildModuleTask:new{ module = BurnerToFurnaceModule }:tick{ player = player, machine = machine }
+    T.eq(Fakes.goal_classes(machine)[1], "BuildBuildingTask", "first task")
+  end)
+
   T.it("gives up with a message when there is no spot", function()
     player = Fakes.player{ surface = Lab.surface() }
     local task = BuildModuleTask:new{ module = BurnerToFurnaceModule }
