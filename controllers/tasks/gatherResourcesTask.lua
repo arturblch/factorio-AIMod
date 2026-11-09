@@ -10,13 +10,16 @@ require 'util/inventories'
    - type: string; The thing the player needs
    - qty: number; How many of the thing the player should have in the
           inventory when the task is done (a total, not an amount to add)
+   - optional: boolean; (Optional) give up at once when nothing provides
+               the item, instead of looking again every few seconds (for
+               fetching things early, see WaitForOutputTask)
 ]]
 GatherResourceTask = Task:new{goalSet=false}
 local log = Logger.makeLogger("GatherResourceTask");
 local RETRY_TICKS = 300;
 
 function GatherResourceTask:achieved (args)
-  return Inventories.total_craftable_count(args.player, self.type) >= self.qty;
+  return self.gave_up or Inventories.total_craftable_count(args.player, self.type) >= self.qty;
 end
 
 function GatherResourceTask:toString()
@@ -37,6 +40,8 @@ function GatherResourceTask:tick (args)
   local found = storage.resource_managers[player.index]:get_resources(player, self.type, self.qty, args.machine);
   if(found) then
     self.retry_at = nil;
+  elseif(self.optional) then
+    self.gave_up = true;
   else
     if(not self.retry_at) then
       log("No known way to get " .. self.type .. ", will keep looking", "WARN");
