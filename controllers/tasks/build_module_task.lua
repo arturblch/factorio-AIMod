@@ -89,12 +89,55 @@ local impassibleTiles = {
   "water-green"
 };
 local TILE_OFFSET = 0;
+
+-- Resources a drill of `prototype` standing at `center` would mine: those in
+-- its mining area (which can be larger than the drill itself) whose category
+-- it can mine.
+local function resources_in_mining_area(surface, prototype, center)
+  local radius = prototype.get_mining_drill_radius();
+  local area = {{center.x - radius, center.y - radius}, {center.x + radius, center.y + radius}};
+  local categories = prototype.resource_categories or {};
+  local result = {};
+  for i, resource in pairs(surface.find_entities_filtered{area=area, type="resource"}) do
+    if(categories[resource.prototype.resource_category]) then
+      result[#result + 1] = resource;
+    end
+  end
+  return result;
+end
+
+-- A drill mines whatever lies in its mining area, one tile after another, so
+-- a second resource type would end up in whatever the drill feeds (a furnace
+-- with iron ore can't take stone; a drill can't burn iron ore) and stop the
+-- module. Every drill of the module must have its own resource (the
+-- building's `resource`, or the module's) under it and nothing else.
+function BuildModuleTask:drillsMineOnlyTheirResource(surface, corner)
+  for i, building in pairs(self.module.buildings) do
+    local prototype = prototypes.entity[building.type];
+    if(prototype and prototype.type == "mining-drill") then
+      local expected = building.resource or self.module.resource;
+      local center = {x=corner.x + building.position.x, y=corner.y + building.position.y};
+      local resources = resources_in_mining_area(surface, prototype, center);
+      if(#resources == 0) then
+        return false;
+      end
+      for j, resource in ipairs(resources) do
+        if(resource.name ~= expected) then
+          return false;
+        end
+      end
+    end
+  end
+  return true;
+end
+
 function BuildModuleTask:canBuildAtPosition(player, position)
   --for each item in the geometry, verify
   --  a) it's not water (unless it should be)
   --  b) it has the resource it needs (if it need one)
   --  c) none of our buildings is already there
   --  d) no cliff runs through it (cliffs can't be cleared by hand)
+  --then that no drill would mine a second kind of resource
   for i, item in pairs(self.module.geometry) do
     local offset = item.position;
     local offsetPosition = {x=position.x + offset.x + TILE_OFFSET, y=position.y + offset.y + TILE_OFFSET};
@@ -134,7 +177,9 @@ function BuildModuleTask:canBuildAtPosition(player, position)
       end
     end
   end
-  return true;
+  -- same corner as in tick(): position is the center of geometry tile (0, 0)
+  local corner = {x=math.floor(position.x), y=math.floor(position.y)};
+  return self:drillsMineOnlyTheirResource(player.surface, corner);
 end
 
 -- Center of the module's geometry tile (0, 0), or nil.

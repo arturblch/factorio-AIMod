@@ -44,6 +44,66 @@ T.describe("BuildModuleTask:canBuildAtPosition", function()
     Lab.surface().create_entity{ name = "cliff", position = { 13, 10 }, cliff_orientation = "west-to-east" }
     T.falsy(task:canBuildAtPosition(player, spot), "can build")
   end)
+
+  T.it("doesn't mind other ore next to the drill, under the furnace", function()
+    local spot = iron_spot(10, 10)
+    Lab.patch("stone", 12, 10, 13, 11)
+    T.truthy(task:canBuildAtPosition(player, spot), "can build")
+  end)
+end)
+
+-- The geometry lists the ore each tile needs, but what a drill really mines
+-- is everything in its mining area. These modules leave drill tiles out of
+-- the geometry on purpose, so only the mining area check can catch the mix.
+T.describe("BuildModuleTask: one resource per drill", function()
+  local player
+  local loose_burner = BaseModule:new{ name = "LooseBurner", resource = "iron-ore",
+    geometry = { { position = { x = 0, y = 0 }, resource = "iron-ore" } },
+    buildings = { { type = "burner-mining-drill", position = { x = 1, y = 1 } } },
+    inputs = {}, outputs = {} }
+  -- an electric drill is 3x3 but mines 5x5
+  local loose_electric = BaseModule:new{ name = "LooseElectric", resource = "iron-ore",
+    geometry = { { position = { x = 0, y = 0 }, resource = "iron-ore" } },
+    buildings = { { type = "electric-mining-drill", position = { x = 1.5, y = 1.5 } } },
+    inputs = {}, outputs = {} }
+  local function can_build(module)
+    return BuildModuleTask:new{ module = module }:canBuildAtPosition(player, { x = 10.5, y = 10.5 })
+  end
+  T.before_each(function()
+    Lab.reset()
+    player = Fakes.player{ surface = Lab.surface() }
+  end)
+
+  T.it("accepts a drill on its own ore only", function()
+    Lab.patch("iron-ore", 10, 10, 11, 11)
+    T.truthy(can_build(loose_burner), "can build")
+  end)
+
+  T.it("rejects a drill that would also mine another ore", function()
+    Lab.patch("iron-ore", 10, 10, 11, 10)
+    Lab.ore("stone", 11, 11)
+    T.falsy(can_build(loose_burner), "can build")
+  end)
+
+  T.it("looks at the whole mining area, not just under the drill", function()
+    Lab.patch("iron-ore", 10, 10, 12, 12)
+    Lab.ore("copper-ore", 13, 11) -- next to the drill, inside its 5x5 area
+    T.falsy(can_build(loose_electric), "copper inside the area")
+  end)
+
+  T.it("ignores ore just outside the mining area", function()
+    Lab.patch("iron-ore", 10, 10, 12, 12)
+    Lab.ore("copper-ore", 14, 11)
+    T.truthy(can_build(loose_electric), "copper outside the area")
+  end)
+
+  T.it("checks each drill against its own resource", function()
+    Lab.patch("coal", 10, 10, 13, 11)
+    T.truthy(BuildModuleTask:new{ module = BurnerToBurnerModule }:canBuildAtPosition(player, { x = 10.5, y = 10.5 }), "all coal")
+    Lab.surface().find_entities_filtered{ position = { 13.5, 11.5 }, type = "resource" }[1].destroy()
+    Lab.ore("iron-ore", 13, 11)
+    T.falsy(BuildModuleTask:new{ module = BurnerToBurnerModule }:canBuildAtPosition(player, { x = 10.5, y = 10.5 }), "iron under the 2nd drill")
+  end)
 end)
 
 T.describe("BuildModuleTask:tick", function()
