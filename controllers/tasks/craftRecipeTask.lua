@@ -22,6 +22,34 @@ function CraftRecipeTask:toString()
   return "CraftRecipeTask - " .. self.qty .. " x " .. self.recipe;
 end
 
+-- A product of `crafts` x `recipe` that won't fit into the inventory, or nil.
+-- A finished hand-craft waits until its product has a slot, and the whole
+-- queue stalls behind it. Queueing takes the ingredients out right away, so
+-- the product also fits when an ingredient is used up completely.
+local function product_without_room(player, recipe, crafts)
+  for i, product in pairs(recipe.products) do
+    if(product.type == "item" and not Inventories.has_room_for(player, product.name)) then
+      local missing, used = Recipes.requirements(player, recipe, crafts);
+      for name, amount in pairs(used) do
+        if(amount >= Inventories.total_craftable_count(player, name)) then
+          return nil;
+        end
+      end
+      return product.name;
+    end
+  end
+  return nil;
+end
+
+-- Before crafting starts: the ingredients, as totals (see Task:needs).
+function CraftRecipeTask:needs (args)
+  local recipe = args.player.force.recipes[self.recipe];
+  if(self.started or not recipe) then
+    return nil;
+  end
+  return Recipes.needed_totals(args.player, recipe, self.qty);
+end
+
 function CraftRecipeTask:tick (args)
   local player = args.player;
   if(self.started) then
@@ -59,6 +87,13 @@ function CraftRecipeTask:tick (args)
       log("Have everything for " .. self.recipe .. " but the game says it can't be crafted yet", "WARN");
       self.reported = true;
     end
+    return;
+  end
+
+  local no_room = product_without_room(player, recipe, self.qty);
+  if(no_room) then
+    -- MakeRoomTask is a global here: it requires this file
+    args.machine:pushSingle(MakeRoomTask:new{item=no_room});
     return;
   end
 

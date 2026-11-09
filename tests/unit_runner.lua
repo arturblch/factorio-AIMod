@@ -17,6 +17,7 @@ require 'tests/unit/resource_manager_test'
 require 'tests/unit/modules_test'
 require 'tests/unit/build_test'
 require 'tests/unit/movement_test'
+require 'tests/unit/inventory_test'
 
 -- shared state every test starts without
 T.global_before[#T.global_before + 1] = function()
@@ -25,6 +26,7 @@ T.global_before[#T.global_before + 1] = function()
   storage.unreachable = nil
   storage.path_results = nil
   storage.failed_goals = nil
+  storage.room_failed_at = nil
 end
 
 -- the bot must not play while the tests poke at the game

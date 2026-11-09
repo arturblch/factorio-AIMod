@@ -41,7 +41,10 @@ param(
   # every tick, before the bot runs, move the player's selection onto some
   # other nearby entity (like a mouse moving over things) and fail if the
   # character mines anything the bot didn't target
-  [switch]$CursorNoise
+  [switch]$CursorNoise,
+  # the first time the bot is about to mine, fill every empty slot of its
+  # inventory with stone bricks; it has to put them away to go on
+  [switch]$FullInventory
 )
 $ErrorActionPreference = "Stop"
 $repo = Split-Path -Parent $PSScriptRoot
@@ -122,7 +125,10 @@ foreach ($s in ($Seed -split ',' | ForEach-Object { [uint32]$_.Trim() })) {
 
   $all = @("--config", "`"$cfg`"", "--mod-directory", "`"$mods`"",
     "--test-scenario", "AIMod/AIPlay", "--test-ticks", "$Ticks", "--map-gen-seed", "$s")
-  if ($CursorNoise) { $all += @("--test-arg", "cursor-noise") }
+  $flags = @()
+  if ($CursorNoise) { $flags += "cursor-noise" }
+  if ($FullInventory) { $flags += "full-inventory" }
+  if ($flags) { $all += @("--test-arg", ($flags -join ",")) }
   $p = Start-Process -FilePath $Factorio -ArgumentList $all -NoNewWindow -Wait -PassThru -RedirectStandardOutput $runLog
   $lines = @(Get-Content $runLog -Encoding UTF8)
   $test = @($lines | Where-Object { $_ -match $testPrefix } | ForEach-Object { $_ -replace $testPrefix, '' })
@@ -150,13 +156,13 @@ foreach ($s in ($Seed -split ',' | ForEach-Object { [uint32]$_.Trim() })) {
   if ($p.ExitCode -ne 0 -or $errors.Count -gt 0) {
     $failed++
     Write-Host "seed ${s}: FAILED (exit $($p.ExitCode))" -ForegroundColor Red
-    $explained = @($test | Where-Object { $_ -match 'STORAGE PROBLEM|^GAVE UP|^UNINTENDED|^MINED THE WRONG|^cursor noise' })
+    $explained = @($test | Where-Object { $_ -match 'STORAGE PROBLEM|^GAVE UP|^UNINTENDED|^MINED THE WRONG|^cursor noise|^FULL INVENTORY|^full inventory|^DIED' })
     $explained
     $errors | Select-Object -First 10
     if ($errors.Count -eq 0 -and $explained.Count -eq 0) { $lines | Select-Object -Last 15 }
   } elseif ($completed) {
-    $noise = $test | Where-Object { $_ -match '^cursor noise' } | Select-Object -First 1
-    Write-Host ("seed ${s}: OK, $completed" + $(if ($noise) { "; $noise" } else { "" })) -ForegroundColor Green
+    $extra = @($test | Where-Object { $_ -match '^cursor noise|^full inventory' })
+    Write-Host ((@("seed ${s}: OK, $completed") + $extra) -join "; ") -ForegroundColor Green
   } else {
     $failed++
     $last = $test | Where-Object { $_ -match ' pos=' } | Select-Object -Last 1

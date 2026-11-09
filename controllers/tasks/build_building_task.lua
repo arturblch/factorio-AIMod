@@ -22,6 +22,10 @@ function BuildBuildingTask:toString()
   return "BuildBuildingTask - type: " .. self.type .. " position: (" .. self.position.x .. ", " .. self.position.y .. ")";
 end
 
+function BuildBuildingTask:needs (args)
+  return {[self.type] = 1};
+end
+
 -- self.position, self.type, self.direction
 function BuildBuildingTask:tick (args)
   local player = args.player;

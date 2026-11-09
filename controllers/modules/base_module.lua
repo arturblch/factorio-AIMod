@@ -126,6 +126,17 @@ local function gather_fuel_first(fuel_tasks)
   return tasks;
 end
 
+-- Fuel for one round of fueling every fuel input, {fuel = amount}.
+function BaseModule:fuelNeeds()
+  local totals = {};
+  for i, input in ipairs(self.inputs) do
+    if(input.slot == "fuel") then
+      totals[input.type] = (totals[input.type] or 0) + FUEL_AMOUNT;
+    end
+  end
+  return totals;
+end
+
 -- FuelBuildingTasks for every fuel input that is running low.
 function BaseModule:fuelTasks()
   local tasks = {};

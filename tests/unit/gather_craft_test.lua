@@ -82,6 +82,28 @@ T.describe("CraftRecipeTask", function()
   end)
 end)
 
+T.describe("CraftRecipeTask with a full inventory", function()
+  -- a finished craft waits for a free slot, so the bot makes room first
+  T.it("makes room for the product first", function()
+    local player = Fakes.player{ slots = 2, craftable = 1, items = { ["iron-plate"] = 100, ["stone-brick"] = 100 } }
+    local machine = GoalMachine:new()
+    local task = CraftRecipeTask:new{ recipe = "iron-gear-wheel", qty = 1 }
+    task:tick{ player = player, machine = machine }
+    local goal = Fakes.goals(machine)[1]
+    T.eq(getmetatable(goal), MakeRoomTask, "task")
+    T.eq(goal and goal.item, "iron-gear-wheel", "item")
+    T.same(player.crafted, {}, "crafted")
+  end)
+
+  T.it("crafts when an ingredient is used up and frees its slot", function()
+    local player = Fakes.player{ slots = 2, craftable = 1, items = { wood = 2, ["stone-brick"] = 100 } }
+    local machine = GoalMachine:new()
+    CraftRecipeTask:new{ recipe = "wooden-chest", qty = 1 }:tick{ player = player, machine = machine }
+    T.same(Fakes.goals(machine), {}, "tasks")
+    T.same(player.crafted, { { recipe = "wooden-chest", count = 1 } }, "crafted")
+  end)
+end)
+
 T.describe("CraftResourceSource", function()
   T.it("crafts only what is missing", function()
     local player = Fakes.player{ items = { ["iron-gear-wheel"] = 2 } }

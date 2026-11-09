@@ -48,14 +48,17 @@ function Recipes.handcraft_recipe_for(force, item)
 end
 
 --[[
-  Raw items still missing to hand-craft `crafts` x `recipe` with what is in
-  the player's main inventory. Intermediates are expanded recursively.
-  Returns {item_name = missing_amount}.
+  What hand-crafting `crafts` x `recipe` takes, given the player's main
+  inventory. Intermediates that aren't in the inventory are expanded
+  recursively. Returns two tables {item_name = amount}:
+   - missing: raw items that still have to be gathered
+   - used: items the crafts would take from the inventory
 ]]
-function Recipes.missing_raw(player, recipe, crafts)
+function Recipes.requirements(player, recipe, crafts)
   local inventory = player.get_main_inventory();
   local available = {};
   local missing = {};
+  local used_total = {};
 
   local function expand(current, count, depth)
     for i, ingredient in pairs(current.ingredients) do
@@ -66,6 +69,9 @@ function Recipes.missing_raw(player, recipe, crafts)
       local need = ingredient.amount * count;
       local used = math.min(available[name], need);
       available[name] = available[name] - used;
+      if(used > 0) then
+        used_total[name] = (used_total[name] or 0) + used;
+      end
       need = need - used;
       if(need > 0) then
         local sub = depth < MAX_DEPTH and Recipes.handcraft_recipe_for(player.force, name);
@@ -79,5 +85,32 @@ function Recipes.missing_raw(player, recipe, crafts)
   end
 
   expand(recipe, crafts, 0);
-  return missing;
+  return missing, used_total;
+end
+
+-- Raw items still missing to hand-craft `crafts` x `recipe`, {name = amount}.
+function Recipes.missing_raw(player, recipe, crafts)
+  return (Recipes.requirements(player, recipe, crafts));
+end
+
+-- What crafting needs in the inventory, as totals {name = amount}: what it
+-- takes from the inventory plus what is still missing.
+function Recipes.needed_totals(player, recipe, crafts)
+  local missing, used = Recipes.requirements(player, recipe, crafts);
+  local totals = {};
+  for name, amount in pairs(used) do totals[name] = amount end
+  for name, amount in pairs(missing) do totals[name] = (totals[name] or 0) + amount end
+  return totals;
+end
+
+-- How many `item` the hand-craft queue will still add to the inventory.
+-- Entries marked `prerequisite` are intermediates the queue uses up itself.
+function Recipes.queued_count(player, item)
+  local count = 0;
+  for i, entry in pairs(player.crafting_queue or {}) do
+    if(not entry.prerequisite) then
+      count = count + entry.count * Recipes.product_amount(prototypes.recipe[entry.recipe], item);
+    end
+  end
+  return count;
 end

@@ -76,6 +76,37 @@ function BuildModuleTask:isBadSpot(position)
   return false;
 end
 
+-- Until the build tasks are queued: the buildings (and what crafting the
+-- missing ones takes) and the first round of fuel.
+function BuildModuleTask:needs (args)
+  if(self.failed or self.built) then
+    return nil;
+  end
+  local player = args.player;
+  local totals = {};
+  local function add(name, amount)
+    totals[name] = (totals[name] or 0) + amount;
+  end
+  local counts = {};
+  for i, building in pairs(self.module.buildings) do
+    counts[building.type] = (counts[building.type] or 0) + 1;
+  end
+  for type, count in pairs(counts) do
+    add(type, count);
+    local missing = count - Inventories.count_with_queue(player, type);
+    local recipe = player.force.recipes[type];
+    if(missing > 0 and recipe) then
+      for name, amount in pairs(Recipes.needed_totals(player, recipe, missing)) do
+        add(name, amount);
+      end
+    end
+  end
+  for name, amount in pairs(self.module:fuelNeeds()) do
+    add(name, amount);
+  end
+  return totals;
+end
+
 function BuildModuleTask:toString()
   return "BuildModuleTask - " .. self.module.name;
 end

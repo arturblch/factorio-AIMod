@@ -15,6 +15,9 @@ require 'controllers/tasks/build_building_task'
 require 'controllers/tasks/fuel_building_task'
 require 'controllers/tasks/wait_for_output_task'
 require 'controllers/tasks/collect_module_output_task'
+require 'controllers/tasks/take_from_chest_task'
+require 'controllers/tasks/make_room_task'
+require 'controllers/managers/chest_resource_source'
 require 'controllers/modules/burner_to_furnace'
 require 'controllers/modules/burner_to_burner'
 require 'controllers/managers/manager'
@@ -36,6 +39,7 @@ local persistent_classes = {
   TreeResourceSource = TreeResourceSource,
   CraftResourceSource = CraftResourceSource,
   ModuleResourceSource = ModuleResourceSource,
+  ChestResourceSource = ChestResourceSource,
   BaseModule = BaseModule,
   Fringe = Fringe,
   GatherResourceTask = GatherResourceTask,
@@ -53,6 +57,8 @@ local persistent_classes = {
   FuelBuildingTask = FuelBuildingTask,
   WaitForOutputTask = WaitForOutputTask,
   CollectModuleOutputTask = CollectModuleOutputTask,
+  TakeFromChestTask = TakeFromChestTask,
+  MakeRoomTask = MakeRoomTask,
 }
 for name, class in pairs(persistent_classes) do
   class.__index = class

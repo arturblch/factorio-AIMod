@@ -31,8 +31,19 @@ function MineResourceTask:toString()
   return "MineResourceTask - " .. tostring(self.type) .. " up to " .. tostring(self.qty);
 end
 
+function MineResourceTask:needs (args)
+  return {[self.type] = self.qty};
+end
+
+-- MakeRoomTask is used as a global, not required: it requires this file's
+-- requirers (resource sources), and require can't go round in a circle.
 function MineResourceTask:tick (args)
   local player = args.player;
+  if(not Inventories.has_room_for(player, self.type)) then
+    player.mining_state = {mining = false};
+    args.machine:pushSingle(MakeRoomTask:new{item=self.type});
+    return;
+  end
   if(player.can_reach_entity(self.target)) then
     player.update_selected_entity(self.target.position)
     player.mining_state = { mining = true, position = self.target.position }

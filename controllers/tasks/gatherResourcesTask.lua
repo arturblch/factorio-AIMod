@@ -23,6 +23,10 @@ function GatherResourceTask:toString()
   return "GatherResourceTask - " .. self.type .. " up to " .. self.qty;
 end
 
+function GatherResourceTask:needs (args)
+  return {[self.type] = self.qty};
+end
+
 function GatherResourceTask:tick (args)
   local player = args.player;
   -- nothing known provides this item: don't search again every tick

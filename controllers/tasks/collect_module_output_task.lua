@@ -22,6 +22,10 @@ function CollectModuleOutputTask:toString()
   return "CollectModuleOutputTask - " .. self.type .. " up to " .. self.qty;
 end
 
+function CollectModuleOutputTask:needs (args)
+  return {[self.type] = self.qty};
+end
+
 function CollectModuleOutputTask:tick (args)
   local player = args.player;
   for i, output in ipairs(self.module:outputsForProduct(self.type)) do
@@ -32,6 +36,10 @@ function CollectModuleOutputTask:tick (args)
     if(output.available > 0) then
       if(not player.can_reach_entity(output.entity)) then
         args.machine:pushSingle(MoveToPointTask.next_to(output.entity));
+        return;
+      end
+      if(not Inventories.has_room_for(player, self.type)) then
+        args.machine:pushSingle(MakeRoomTask:new{item=self.type}); -- a global, see MineResourceTask:tick
         return;
       end
       local count = math.min(output.available, wanted);

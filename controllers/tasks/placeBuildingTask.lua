@@ -29,6 +29,10 @@ function PlaceBuildingTask:toString()
   return "PlaceBuildingTask - type: " .. self.type .. " position: (" .. self.position.x .. ", " .. self.position.y .. ")";
 end
 
+function PlaceBuildingTask:needs (args)
+  return {[self.type] = 1};
+end
+
 function PlaceBuildingTask:tick (args)
   local player = args.player;
   local prototype = prototypes.entity[self.type];

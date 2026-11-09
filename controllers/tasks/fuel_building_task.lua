@@ -34,6 +34,13 @@ function FuelBuildingTask:toString()
     (entity and (entity.name .. " (" .. entity.position.x .. ", " .. entity.position.y .. ")") or "?");
 end
 
+function FuelBuildingTask:needs (args)
+  if(self.done) then
+    return nil;
+  end
+  return {[self.fuel] = self.amount};
+end
+
 function FuelBuildingTask:tick (args)
   local player = args.player;
   local entity = target(self);

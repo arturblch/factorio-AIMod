@@ -114,9 +114,11 @@ end
   target, a different one every tick. The bot must still mine only what its
   current task targets: anything else mined counts as unintended.
 ]]
-local function noise_enabled()
-  return (script.test_arg or ""):find("cursor-noise", 1, true) ~= nil
+-- `--test-arg` holds a comma separated list of flags
+local function test_flag(name)
+  return (script.test_arg or ""):find(name, 1, true) ~= nil
 end
+local function noise_enabled() return test_flag("cursor-noise") end
 
 local function current_target(machine)
   local top = machine.goals and machine.goals.current
@@ -136,6 +138,45 @@ local function cursor_noise(player, machine, tick, t)
   t.noise_ticks = (t.noise_ticks or 0) + 1
 end
 
+--[[
+  Full inventory (`--test-arg full-inventory`, run-headless.ps1
+  -FullInventory): the first time the bot is about to mine something, every
+  empty slot of its main inventory is filled with stone bricks, which no
+  task needs. With a full inventory the character can't mine at all, so the
+  bot has to put the bricks away (MakeRoomTask) before it can go on.
+]]
+local MINING_TASKS = { MineResourceTask = true, MineEntityTask = true }
+
+local function fill_inventory(player, tick, t)
+  local inventory = player.get_main_inventory()
+  local filled = 0
+  for i = 1, #inventory do
+    if not inventory[i].valid_for_read then
+      inventory[i].set_stack{ name = "stone-brick", count = 100 }
+      filled = filled + 1
+    end
+  end
+  t.filled = filled
+  log("[test] filled " .. filled .. " empty slots with stone bricks at t=" .. tick)
+end
+
+local function full_inventory_summary(player, t)
+  local stashes, stored = 0, 0
+  for _, source in pairs(storage.resource_managers[player.index].sources) do
+    if getmetatable(source) == ChestResourceSource and source.entity.valid then
+      stashes = stashes + 1
+      stored = stored + source:inventory().get_item_count("stone-brick")
+    end
+  end
+  local dropped = 0
+  for _, e in pairs(player.surface.find_entities_filtered{ type = "item-entity" }) do
+    if e.stack.name == "stone-brick" then dropped = dropped + e.stack.count end
+  end
+  return "full inventory: filled " .. (t.filled or 0) .. " slots, MakeRoomTask ran " .. (t.make_room or 0) ..
+    " times, " .. stashes .. " stash chests with " .. stored .. " bricks, " .. dropped .. " bricks dropped, " ..
+    player.get_main_inventory().get_item_count("stone-brick") .. " still carried"
+end
+
 script.on_event(defines.events.on_player_mined_entity, function(event)
   local machine = storage.goal_machines and storage.goal_machines[1]
   local t = storage.test
@@ -150,6 +191,17 @@ script.on_event(defines.events.on_player_mined_entity, function(event)
   end
 end)
 
+-- The character can die (biters, mostly) and respawn without its inventory;
+-- the bot then carries on, so this would go unnoticed otherwise.
+script.on_event(defines.events.on_player_died, function(event)
+  local t = storage.test
+  if not t then return end
+  t.deaths = (t.deaths or 0) + 1
+  local player = game.get_player(event.player_index)
+  log("[test] DIED at t=" .. event.tick .. " " .. pos(player.position) ..
+    " killed by " .. (event.cause and event.cause.valid and event.cause.name or "?"))
+end)
+
 local first_tick_after_load = true -- plain local: resets on every load
 local mod_on_tick = script.get_event_handler(defines.events.on_tick)
 
@@ -160,6 +212,10 @@ script.on_event(defines.events.on_tick, function(event)
   local machine = storage.goal_machines and storage.goal_machines[1]
   if player and machine and noise_enabled() then
     cursor_noise(player, machine, event.tick, t)
+  end
+  if player and player.character and machine and machine.goals and not t.filled and test_flag("full-inventory")
+      and MINING_TASKS[class_names[getmetatable(machine.goals.current)]] then
+    fill_inventory(player, event.tick, t)
   end
 
   mod_on_tick(event)
@@ -177,6 +233,7 @@ script.on_event(defines.events.on_tick, function(event)
   local name = machine.goals and goal_name(machine.goals.current) or "<done>"
   if name ~= t.last_goal then
     t.transitions = t.transitions + 1
+    if name:find("^MakeRoomTask") then t.make_room = (t.make_room or 0) + 1 end
     if t.transitions <= MAX_TRANSITION_LINES then
       log("[test] t=" .. event.tick .. " goal -> " .. name .. " @ " .. pos(player.position))
     end
@@ -195,9 +252,17 @@ script.on_event(defines.events.on_tick, function(event)
       log("[test] cursor noise: decoy selected on " .. (t.noise_ticks or 0) .. " ticks, " ..
         (t.unintended or 0) .. " unintended entities mined")
     end
+    local full_inventory = test_flag("full-inventory")
+    if full_inventory then log("[test] " .. full_inventory_summary(player, t)) end
     if #failed > 0 then
       -- the goal list ran out, but some modules were given up on
       log("[test] GAVE UP at t=" .. event.tick .. " on: " .. table.concat(failed, ", "))
+      script.finish_test(false)
+    elseif (t.deaths or 0) > 0 then
+      log("[test] DIED " .. t.deaths .. " times")
+      script.finish_test(false)
+    elseif full_inventory and (t.make_room or 0) == 0 then
+      log("[test] FULL INVENTORY NOT EXERCISED: the bot never had to make room")
       script.finish_test(false)
     elseif (t.unintended or 0) > 0 then
       log("[test] MINED THE WRONG THING " .. t.unintended .. " times (cursor noise)")
