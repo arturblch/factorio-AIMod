@@ -6,6 +6,7 @@ require 'util/unreachable'
 local accuracy = 1;
 local STUCK_TICKS = 180; -- 3 s without real progress means the way is blocked
 local STUCK_DISTANCE = 0.5;
+local LOST_TICKS = 600; -- 10 s of walking without getting closer: lost
 local num_projections = 6;
 local max_turn_rate = 10; -- degrees
 local collision_turn_rate = max_turn_rate * 2;
@@ -26,6 +27,18 @@ end
 
 local function sign(x)
    return (x < 0 and -1) or 1
+end
+
+-- The turn from bearing `from` to bearing `to` the short way round, in
+-- degrees within (-180, 180]. Bearings jump between 359 and 0 when a target
+-- is (nearly) due north; a plain `to - from` then turned the character
+-- almost all the way round, which could send it off in the wrong direction.
+local function shortest_turn(from, to)
+  local turn = (to - from) % 360;
+  if(turn > 180) then
+    turn = turn - 360;
+  end
+  return turn;
 end
 
 --[[
@@ -70,17 +83,31 @@ function MoveToPointTask:giveUp(player, reason)
 end
 
 -- Switches to the pathfinder the first time the character stops making
--- progress, gives up the second time.
+-- progress, gives up the second time. No progress is either not moving for
+-- STUCK_TICKS, or, while steering, moving without getting any closer for
+-- LOST_TICKS: walking in circles or off in the wrong direction is no better
+-- than standing still. (Going round a big rock takes a few seconds, hence
+-- the longer limit. The pathfinder's route may lead away from the target
+-- for a while, so on it only moving counts.)
 function MoveToPointTask:checkProgress(player)
   local p = player.position;
   if(not self.progress_position or util.distance(p, self.progress_position) > STUCK_DISTANCE) then
     self.progress_position = {x=p.x, y=p.y};
     self.progress_tick = game.tick;
-  elseif(game.tick - self.progress_tick > STUCK_TICKS) then
+  end
+  local distance = util.distance(p, {x=self.x, y=self.y});
+  if(not self.best_distance or distance < self.best_distance - STUCK_DISTANCE) then
+    self.best_distance = distance;
+    self.closer_tick = game.tick;
+  end
+  local steering = not (self.path_requested and not self.following_done);
+  local stuck = game.tick - self.progress_tick > STUCK_TICKS;
+  local lost = steering and game.tick - self.closer_tick > LOST_TICKS;
+  if(stuck or lost) then
     if(self.path_requested) then
-      self:giveUp(player, "Stuck even on the pathfinder's route");
+      self:giveUp(player, stuck and "Stuck even on the pathfinder's route" or "Lost even after the pathfinder's route");
     else
-      log(string.format("Blocked at (%.1f, %.1f), asking the pathfinder", p.x, p.y), "INFO");
+      log(string.format("%s at (%.1f, %.1f), asking the pathfinder", stuck and "Blocked" or "Not getting closer", p.x, p.y), "INFO");
       self:requestPath(player);
     end
   end
@@ -143,6 +170,7 @@ function MoveToPointTask:followPath(player)
   if(not target) then
     self.path = nil;
     self.following_done = true;
+    self.closer_tick = game.tick; -- steering again: give it its full time
     return false;
   end
   local direction = self:getDirection(self:getBearingToTarget(player, target));
@@ -238,7 +266,7 @@ function MoveToPointTask:tick (args)
   if(not self.current_bearing) then
     self.current_bearing = target_bearing;
   end
-  local turn_amount = target_bearing - self.current_bearing;
+  local turn_amount = shortest_turn(self.current_bearing, target_bearing);
   self.current_bearing = self.current_bearing + (sign(turn_amount) * math.min(max_turn_rate, math.abs(turn_amount)));
 
   if(not self.feelers) then

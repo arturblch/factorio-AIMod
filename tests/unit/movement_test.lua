@@ -1,5 +1,6 @@
 local T = require 'tests/lib/testing'
 local Fakes = require 'tests/lib/fakes'
+local Lab = require 'tests/lib/lab'
 
 local function walk_to(x, y, fields)
   local task = MoveToPointTask:new{ x = x, y = y }
@@ -7,10 +8,13 @@ local function walk_to(x, y, fields)
   return task
 end
 
--- what a stuck check sees: no movement for longer than allowed
+-- what a stuck check sees: no movement and no getting closer for longer
+-- than allowed
 local function pretend_stuck(task, player)
   task.progress_position = { x = player.position.x, y = player.position.y }
+  task.best_distance = util.distance(player.position, { x = task.x, y = task.y })
   task.progress_tick = game.tick - 1000
+  task.closer_tick = game.tick - 1000
 end
 
 T.describe("MoveToPointTask bearings", function()
@@ -64,6 +68,48 @@ T.describe("MoveToPointTask", function()
     T.same(surface.requests[1].goal, { x = 10, y = 0 }, "goal")
     T.eq(task.request_id, 7, "request id")
     T.falsy(task.stuck, "gave up")
+  end)
+
+  T.it("asks the pathfinder when walking doesn't bring it closer", function()
+    local surface = Fakes.pathfinding_surface(7)
+    local player = Fakes.player{ surface = surface, position = { x = -30, y = 0 } }
+    local task = walk_to(10, 0)
+    task.best_distance = 5 -- it was 5 tiles away, now it is 40, and it keeps moving
+    task.closer_tick = game.tick - 1000
+    task:checkProgress(player)
+    T.eq(#surface.requests, 1, "path requests")
+  end)
+
+  T.it("gives steering a while to get round an obstacle", function()
+    local surface = Fakes.pathfinding_surface(7)
+    local player = Fakes.player{ surface = surface, position = { x = -30, y = 0 } }
+    local task = walk_to(10, 0)
+    task.best_distance = 5
+    task.closer_tick = game.tick - 300 -- 5 s
+    task:checkProgress(player)
+    T.eq(#surface.requests, 0, "path requests")
+  end)
+
+  T.it("counts getting closer as progress", function()
+    local surface = Fakes.pathfinding_surface(7)
+    local player = Fakes.player{ surface = surface, position = { x = 0, y = 0 } }
+    local task = walk_to(10, 0)
+    task.best_distance = 12
+    task.closer_tick = game.tick - 1000
+    task:checkProgress(player)
+    T.eq(#surface.requests, 0, "path requests")
+    T.eq(task.best_distance, 10, "closest so far")
+  end)
+
+  T.it("turns the short way round past north", function()
+    Lab.reset()
+    -- the target is a little east of due north, the character heads a little west of it
+    local player = Fakes.player{ surface = Lab.surface(), position = { x = 0.5, y = 0.5 } }
+    local task = walk_to(1.5, -20)
+    task.current_bearing = 355
+    task:tick{ player = player, machine = GoalMachine:new() }
+    T.truthy(task.current_bearing < 10, "bearing " .. task.current_bearing)
+    T.eq(player.walking_state.direction, defines.direction.north, "direction")
   end)
 
   T.it("gives up and remembers the target the second time", function()
