@@ -105,16 +105,66 @@ local function snapshot(tick, player, machine)
   end
 end
 
+--[[
+  Cursor noise (`--test-arg cursor-noise`, run-headless.ps1 -CursorNoise):
+  a player moving the mouse over other entities changes their selection, and
+  a character mines whatever is selected. Input is applied at the start of a
+  tick, before on_tick, so before the bot runs each tick the selection is
+  moved to some nearby tree, rock, ore tile or building other than the bot's
+  target, a different one every tick. The bot must still mine only what its
+  current task targets: anything else mined counts as unintended.
+]]
+local function noise_enabled()
+  return (script.test_arg or ""):find("cursor-noise", 1, true) ~= nil
+end
+
+local function current_target(machine)
+  local top = machine.goals and machine.goals.current
+  return top and (top.target or top.entity), top
+end
+
+local function cursor_noise(player, machine, tick, t)
+  if not player.character then return end
+  local target = current_target(machine)
+  local choices = {}
+  for _, e in pairs(player.surface.find_entities_filtered{position = player.position, radius = 8,
+      type = {"tree", "simple-entity", "resource", "mining-drill", "furnace"}}) do
+    if e ~= target then choices[#choices + 1] = e end
+  end
+  if #choices == 0 then return end
+  player.update_selected_entity(choices[(tick % #choices) + 1].position)
+  t.noise_ticks = (t.noise_ticks or 0) + 1
+end
+
+script.on_event(defines.events.on_player_mined_entity, function(event)
+  local machine = storage.goal_machines and storage.goal_machines[1]
+  local t = storage.test
+  if not (machine and t) then return end
+  local target, top = current_target(machine)
+  -- BuildModuleTask picks its own buildings up again when it retries
+  local intended = event.entity == target or (top and getmetatable(top) == BuildModuleTask)
+  if not intended then
+    t.unintended = (t.unintended or 0) + 1
+    log("[test] UNINTENDED mining at t=" .. event.tick .. ": " .. event.entity.name .. " " ..
+      pos(event.entity.position) .. " while the task was " .. (top and goal_name(top) or "<none>"))
+  end
+end)
+
 local first_tick_after_load = true -- plain local: resets on every load
 local mod_on_tick = script.get_event_handler(defines.events.on_tick)
 
 script.on_event(defines.events.on_tick, function(event)
-  mod_on_tick(event)
-
   storage.test = storage.test or { transitions = 0 }
   local t = storage.test
   local player = game.get_player(1)
   local machine = storage.goal_machines and storage.goal_machines[1]
+  if player and machine and noise_enabled() then
+    cursor_noise(player, machine, event.tick, t)
+  end
+
+  mod_on_tick(event)
+
+  machine = storage.goal_machines and storage.goal_machines[1]
   if not (player and machine) then return end
 
   if first_tick_after_load then
@@ -141,9 +191,16 @@ script.on_event(defines.events.on_tick, function(event)
     t.completed = true
     local failed = storage.failed_goals and storage.failed_goals[1] or {}
     snapshot(event.tick, player, machine)
+    if noise_enabled() then
+      log("[test] cursor noise: decoy selected on " .. (t.noise_ticks or 0) .. " ticks, " ..
+        (t.unintended or 0) .. " unintended entities mined")
+    end
     if #failed > 0 then
       -- the goal list ran out, but some modules were given up on
       log("[test] GAVE UP at t=" .. event.tick .. " on: " .. table.concat(failed, ", "))
+      script.finish_test(false)
+    elseif (t.unintended or 0) > 0 then
+      log("[test] MINED THE WRONG THING " .. t.unintended .. " times (cursor noise)")
       script.finish_test(false)
     else
       log("[test] COMPLETED at t=" .. event.tick)
