@@ -47,6 +47,11 @@ jobs:
           - name: full inventory
             id: full-inventory
             args: -Seed "2,6,42,1234567" -FullInventory -Brief
+          # copper and stone modules (the iron one comes first as their
+          # foundation), then 10 bricks taken out of the stone module
+          - name: other goals
+            id: goals
+            args: -Seed "1,4,42,1234567" -Goals "copper-plate:10,stone-brick:5,have:stone-brick:10" -Brief
     steps:
       - uses: actions/checkout@v7
 

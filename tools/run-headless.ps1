@@ -53,7 +53,10 @@ param(
   [switch]$CursorNoise,
   # the first time the bot is about to mine, fill every empty slot of its
   # inventory with stone bricks; it has to put them away to go on
-  [switch]$FullInventory
+  [switch]$FullInventory,
+  # replace the bot's goals, comma separated: <item>:<n> = make n per minute,
+  # have:<item>:<n> = have n in the inventory, e.g. "copper-plate:10,have:copper-cable:20"
+  [string]$Goals
 )
 $ErrorActionPreference = "Stop"
 $repo = Split-Path -Parent $PSScriptRoot
@@ -171,6 +174,10 @@ foreach ($s in ($Seed -split ',' | ForEach-Object { [uint32]$_.Trim() })) {
   $flags = @()
   if ($CursorNoise) { $flags += "cursor-noise" }
   if ($FullInventory) { $flags += "full-inventory" }
+  foreach ($g in ($Goals -split ',' | Where-Object { $_.Trim() })) {
+    $g = $g.Trim()
+    $flags += $(if ($g -like "have:*") { $g } else { "goal:$g" })
+  }
   if ($flags) { $all += @("--test-arg", ($flags -join ",")) }
   $p = Start-Process -FilePath $Factorio -ArgumentList $all -NoNewWindow -Wait -PassThru -RedirectStandardOutput $runLog
   $lines = @(Get-Content $runLog -Encoding UTF8)
