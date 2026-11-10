@@ -65,3 +65,5 @@ API reference matching the installed version: `C:\Program Files (x86)\Steam\stea
 ## Working notes
 
 `PR_NOTES.md` (git-ignored) holds the running notes for pull request descriptions — what changed, why, how it was verified, known limitations. Keep it updated as changes are made.
+
+`PLAN.md` (git-ignored, in Russian) is the bot's development plan shared by all sessions of this project: a status table of numbered items (done / in progress / not started, with branch and commits), details and touched files per item, the current baseline (ticks on the 28 seeds) and the rules for taking an item. Read it before starting strategy work. Mark an item "в работе" before working on it and "готово" when done. A session in a worktree edits the one copy in the main checkout, `C:\Users\anna pc\Documents\projects\factorio-AIMod\PLAN.md`, not a copy of its own.
