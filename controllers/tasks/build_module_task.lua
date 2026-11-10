@@ -5,11 +5,14 @@ require 'controllers/tasks/build_building_task'
 require 'controllers/tasks/craftRecipeTask'
 require 'controllers/managers/module_resource_source'
 require 'util/inventories'
+require 'util/recipes'
+require 'controllers/modules/library'
 
 --[[
   BuildModuleTask
   Finds a spot for a module (a small fixed layout of buildings), makes sure
-  the buildings are in the inventory and then builds them. If a building
+  the buildings are in the inventory and then builds them. A module that the
+  buildings' materials depend on comes first (see foundation). If a building
   couldn't be placed, the ones that were are picked up again and the module
   is tried at another spot, MAX_ATTEMPTS times in all.
    - module: BaseModule; the module to build
@@ -105,6 +108,31 @@ function BuildModuleTask:needs (args)
     add(name, amount);
   end
   return totals;
+end
+
+-- The module to build before this one, or nil: one that makes a raw material
+-- of this module's buildings which only a module can make (iron plates for
+-- drills) while no working module of ours makes it yet. Otherwise building
+-- this module first would use up the drill and furnace that module takes:
+-- the start has one of each and 8 iron plates, one short of a second drill.
+-- Each is tried once; if it was given up on, this module goes ahead anyway.
+function BuildModuleTask:foundation(player)
+  local manager = storage.resource_managers[player.index];
+  local seen = {};
+  for i, building in pairs(self.module.buildings) do
+    local recipe = not seen[building.type] and Recipes.handcraft_recipe_for(player.force, building.type);
+    seen[building.type] = true;
+    for item in pairs(recipe and Recipes.raw_items(player.force, recipe) or {}) do
+      if(not ModuleLibrary.makes(self.module, item) and not ResourceManager.drops(item)
+          and not manager:module_source(item, false)) then
+        local producer = ModuleLibrary.producer(player, item);
+        if(producer and not (self.foundations_tried or {})[producer.name]) then
+          return producer;
+        end
+      end
+    end
+  end
+  return nil;
 end
 
 function BuildModuleTask:toString()
@@ -241,6 +269,14 @@ function BuildModuleTask:tick (args)
   end
 
   if(not self.location) then
+    local first = self:foundation(player);
+    if(first) then
+      log("Building " .. first.name .. " first: " .. self.module.name .. "'s buildings need what it makes", "INFO");
+      self.foundations_tried = self.foundations_tried or {};
+      self.foundations_tried[first.name] = true;
+      args.machine:pushSingle(BuildModuleTask:new{module=first});
+      return;
+    end
     if(self.module.resource == nil) then
       self:fail(player, "don't know where to put " .. self.module.name .. ": it needs no resource");
       return;

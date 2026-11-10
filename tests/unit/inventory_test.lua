@@ -253,7 +253,8 @@ T.describe("Stash chests", function()
     manager:register_source(ChestResourceSource:new{ entity = chest })
     local player = Fakes.player{ surface = Lab.surface() }
     T.eq(getmetatable(manager:best_resource_source(player, "stone")), ChestResourceSource, "stone")
-    T.eq(getmetatable(manager:best_resource_source(player, "coal")), nil, "coal")
+    -- optional: no coal anywhere, and building a coal module is off the table
+    T.eq(getmetatable(manager:best_resource_source(player, "coal", true)), nil, "coal")
   end)
 
   T.it("give what is missing", function()

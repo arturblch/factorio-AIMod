@@ -88,6 +88,24 @@ function Recipes.requirements(player, recipe, crafts)
   return missing, used_total;
 end
 
+-- What `recipe` is made of in the end, whatever the inventory holds: the
+-- ingredients that can't be hand-crafted, {name = true}.
+function Recipes.raw_items(force, recipe)
+  local result = {};
+  local function expand(current, depth)
+    for i, ingredient in pairs(current.ingredients) do
+      local sub = depth < MAX_DEPTH and Recipes.handcraft_recipe_for(force, ingredient.name);
+      if(sub) then
+        expand(sub, depth + 1);
+      else
+        result[ingredient.name] = true;
+      end
+    end
+  end
+  expand(recipe, 0);
+  return result;
+end
+
 -- Raw items still missing to hand-craft `crafts` x `recipe`, {name = amount}.
 function Recipes.missing_raw(player, recipe, crafts)
   return (Recipes.requirements(player, recipe, crafts));

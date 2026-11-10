@@ -37,7 +37,7 @@ function GatherResourceTask:tick (args)
     return;
   end
 
-  local found = storage.resource_managers[player.index]:get_resources(player, self.type, self.qty, args.machine);
+  local found = storage.resource_managers[player.index]:get_resources(player, self.type, self.qty, args.machine, self.optional);
   if(found) then
     self.retry_at = nil;
   elseif(self.optional) then

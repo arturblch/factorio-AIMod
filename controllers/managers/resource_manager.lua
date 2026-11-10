@@ -4,6 +4,8 @@ require 'util/unreachable'
 require 'ground_resource_source'
 require 'tree_resource_source'
 require 'craft_resource_source'
+require 'build_module_resource_source'
+require 'controllers/modules/library'
 
 --[[
   ResourceManager decides where an item comes from:
@@ -11,7 +13,9 @@ require 'craft_resource_source'
    2. the nearest thing on the map that drops it when mined by hand
       (ore, trees, rocks),
    3. hand-crafting,
-   4. a built module that first needs fuel / time to produce it.
+   4. a built module that first needs fuel / time to produce it,
+   5. building a module from ModuleLibrary that makes it (not for optional
+      gathers: fetching things early must not start a building project).
   Natural sources are looked up on demand, so depleted ore and felled trees
   never linger in a list.
 ]]
@@ -66,6 +70,11 @@ local function is_covered(player, entity)
   return false;
 end
 
+-- Whether something on the map drops `item` when mined by hand.
+function ResourceManager.drops(item)
+  return natural_sources_for(item) ~= nil;
+end
+
 function ResourceManager:initialize(player)
   -- nothing to precompute any more, kept for callers
 end
@@ -118,7 +127,10 @@ function ResourceManager:module_source(type, ready_only)
   return nil;
 end
 
-function ResourceManager:best_resource_source(player, type)
+-- `optional`: don't build a module for it. `machine`: the stack asking; a
+-- module that a task on it is already building isn't started again (a drill
+-- for the iron module needs iron plates).
+function ResourceManager:best_resource_source(player, type, optional, machine)
   local source = self:module_source(type, true)
     or self:find_natural_source(player, type);
   if(source) then
@@ -128,13 +140,19 @@ function ResourceManager:best_resource_source(player, type)
   if(craft_source:provides_type(type)) then
     return craft_source;
   end
-  return self:module_source(type, false);
+  source = self:module_source(type, false);
+  if(source or optional) then
+    return source;
+  end
+  local module = ModuleLibrary.producer(player, type, ModuleLibrary.being_built(machine));
+  return module and BuildModuleResourceSource:new{module=module} or nil;
 end
 
 -- Pushes the tasks to get `qty` of `type` in the inventory onto `machine`.
--- Returns false when nothing known can provide the item.
-function ResourceManager:get_resources(player, type, qty, machine)
-  local source = self:best_resource_source(player, type);
+-- Returns false when nothing known can provide the item. `optional`: see
+-- best_resource_source.
+function ResourceManager:get_resources(player, type, qty, machine, optional)
+  local source = self:best_resource_source(player, type, optional, machine);
   if(not source) then
     return false;
   end

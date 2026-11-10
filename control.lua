@@ -17,9 +17,10 @@ require 'controllers/tasks/wait_for_output_task'
 require 'controllers/tasks/collect_module_output_task'
 require 'controllers/tasks/take_from_chest_task'
 require 'controllers/tasks/make_room_task'
+require 'controllers/tasks/production_goal_task'
 require 'controllers/managers/chest_resource_source'
-require 'controllers/modules/burner_to_furnace'
-require 'controllers/modules/burner_to_burner'
+require 'controllers/managers/build_module_resource_source'
+require 'controllers/modules/library'
 require 'controllers/managers/manager'
 require 'controllers/managers/resource_manager'
 require 'controllers/goalMachine'
@@ -40,6 +41,7 @@ local persistent_classes = {
   CraftResourceSource = CraftResourceSource,
   ModuleResourceSource = ModuleResourceSource,
   ChestResourceSource = ChestResourceSource,
+  BuildModuleResourceSource = BuildModuleResourceSource,
   BaseModule = BaseModule,
   Fringe = Fringe,
   GatherResourceTask = GatherResourceTask,
@@ -59,6 +61,7 @@ local persistent_classes = {
   CollectModuleOutputTask = CollectModuleOutputTask,
   TakeFromChestTask = TakeFromChestTask,
   MakeRoomTask = MakeRoomTask,
+  ProductionGoalTask = ProductionGoalTask,
 }
 for name, class in pairs(persistent_classes) do
   class.__index = class
@@ -78,15 +81,21 @@ function AIMod.init_storage()
   storage.goals_done = storage.goals_done or {};
 end
 
+-- The goals a new bot starts with, as products. Each takes one module today:
+-- BurnerToFurnace makes 15 iron plates a minute, BurnerToBurner ~25 coal.
+function AIMod.default_goals()
+  return {
+    ProductionGoalTask:new{item="iron-plate", per_minute=10},
+    ProductionGoalTask:new{item="coal", per_minute=20}
+  };
+end
+
 function AIMod.setup_bot(player)
   local resource_manager = ResourceManager:new();
   resource_manager:initialize(player);
 
   local goal_machine = GoalMachine:new();
-  goal_machine:pushStart({
-    BuildModuleTask:new{module=BurnerToFurnaceModule},
-    BuildModuleTask:new{module=BurnerToBurnerModule}
-  });
+  goal_machine:pushStart(AIMod.default_goals());
 
   storage.resource_managers[player.index] = resource_manager;
   storage.goal_machines[player.index] = goal_machine;
