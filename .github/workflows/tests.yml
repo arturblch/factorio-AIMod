@@ -1,0 +1,88 @@
+# Unit tests and the bot playing AIPlay on the regression seeds, inside the
+# Factorio headless server for Linux (free download, no account needed), via
+# the same tools/run-headless.ps1 that runs them locally on Windows.
+name: tests
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Keep in step with the local install. To bump: take the version from
+  # https://factorio.com/api/latest-releases (stable.headless) and the hash of
+  # factorio-headless_linux_<version>.tar.xz from https://factorio.com/download/sha256sums/
+  FACTORIO_VERSION: 2.1.24
+  FACTORIO_SHA256: c49b66cff90aceff87b30f2973af0df7f51712cb2ee3153e0169d9bed46a964f
+
+jobs:
+  test:
+    # A branch of this repository is tested on push; pull_request runs only for
+    # PRs from forks, so a PR from a branch here isn't tested twice.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: unit tests
+            id: unit
+            args: -Unit -Brief
+          - name: 28 seeds
+            id: seeds
+            args: -Seed "1,2,4,6,7,8,10,12,42,1009,2018,2024,3027,4036,5045,6054,7063,8072,9081,10090,11099,12108,13117,14126,15135,31337,987654,1234567" -Brief
+          - name: cursor noise
+            id: cursor-noise
+            args: -Seed "1,4,42,1234567" -CursorNoise -Brief
+          - name: full inventory
+            id: full-inventory
+            args: -Seed "2,6,42,1234567" -FullInventory -Brief
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Cache Factorio ${{ env.FACTORIO_VERSION }}
+        id: cache
+        uses: actions/cache@v6
+        with:
+          path: ~/factorio-headless
+          key: factorio-headless-linux64-${{ env.FACTORIO_VERSION }}
+
+      - name: Download Factorio ${{ env.FACTORIO_VERSION }}
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          archive="$RUNNER_TEMP/factorio-headless.tar.xz"
+          curl -fsSL --retry 3 -o "$archive" "https://factorio.com/get-download/$FACTORIO_VERSION/headless/linux64"
+          echo "$FACTORIO_SHA256  $archive" | sha256sum -c -
+          mkdir -p ~/factorio-headless
+          tar -xJf "$archive" -C ~/factorio-headless
+          ~/factorio-headless/factorio/bin/x64/factorio --version
+
+      - name: Run ${{ matrix.name }}
+        shell: pwsh
+        run: >-
+          ./tools/run-headless.ps1
+          -Factorio "$HOME/factorio-headless/factorio/bin/x64/factorio"
+          -WorkDir "$env:RUNNER_TEMP/aimod-headless"
+          ${{ matrix.args }}
+
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: logs-${{ matrix.id }}
+          path: |
+            ${{ runner.temp }}/aimod-headless/*.log
+            ${{ runner.temp }}/aimod-headless/data/*.log
+            ${{ runner.temp }}/aimod-headless/data/script-output/
+          if-no-files-found: ignore
+          retention-days: 14
