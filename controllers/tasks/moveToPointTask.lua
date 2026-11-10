@@ -1,8 +1,12 @@
 require 'task'
 require 'util'
 require('util/passable');
+require 'util/unreachable'
 
 local accuracy = 1;
+local STUCK_TICKS = 180; -- 3 s without real progress means the way is blocked
+local STUCK_DISTANCE = 0.5;
+local LOST_TICKS = 600; -- 10 s of walking without getting closer: lost
 local num_projections = 6;
 local max_turn_rate = 10; -- degrees
 local collision_turn_rate = max_turn_rate * 2;
@@ -13,15 +17,181 @@ local cos = function (x) return math.cos(math.rad(x)) end
 local log = Logger.makeLogger("MoveToPointTask");
 MoveToPointTask = Task:new()
 
+-- A MoveToPointTask to a spot just above `entity`. The task stops anywhere
+-- within ~1.4 tiles of its target, the extra tile keeps the character from
+-- ending up inside the entity.
+function MoveToPointTask.next_to(entity)
+  local box = entity.prototype.collision_box;
+  return MoveToPointTask:new{x=entity.position.x, y=entity.position.y + box.left_top.y - 2, entity=entity, reach=true};
+end
+
 local function sign(x)
    return (x < 0 and -1) or 1
 end
 
+-- The turn from bearing `from` to bearing `to` the short way round, in
+-- degrees within (-180, 180]. Bearings jump between 359 and 0 when a target
+-- is (nearly) due north; a plain `to - from` then turned the character
+-- almost all the way round, which could send it off in the wrong direction.
+local function shortest_turn(from, to)
+  local turn = (to - from) % 360;
+  if(turn > 180) then
+    turn = turn - 360;
+  end
+  return turn;
+end
+
+--[[
+  MoveToPointTask
+   - x, y: number; where to walk
+   - entity: LuaEntity; (Optional) what the walk is for. If the way turns out
+             to be blocked, the entity is remembered as unreachable (see
+             util/unreachable.lua) so the caller can pick another one.
+   - reach: boolean; (Optional) stop as soon as `entity` is within reach.
+            Needed for big entities such as huge rocks, whose center the
+            character can never get close to.
+  Walking is done by steering (feelers dodge trees and rocks). When that gets
+  stuck (buildings, water, cliffs) the game's pathfinder is asked for a
+  route, which is then followed waypoint by waypoint. If that gets stuck as
+  well, or there is no route, the task gives up (`stuck`).
+]]
 function MoveToPointTask:achieved (args)
   local player = args.player;
   local maxDistance = (2 * (accuracy^2))^0.5
-  --TODO if (debug) delete the feeler entities!
-  return util.distance(player.position, {x=self.x, y=self.y}) < maxDistance
+  local reached = self.stuck or util.distance(player.position, {x=self.x, y=self.y}) < maxDistance
+  if(self.reach and self.entity ~= nil) then
+    reached = reached or (not self.entity.valid) or player.can_reach_entity(self.entity);
+  end
+  if(reached) then
+    self:destroyFeelers();
+    -- a walking_state set by script sticks until it is changed
+    player.walking_state = {walking = false, direction = defines.direction.north};
+  end
+  return reached
+end
+
+function MoveToPointTask:giveUp(player, reason)
+  self.stuck = true;
+  local what = "";
+  if(self.entity and self.entity.valid) then
+    Unreachable.mark(self.entity);
+    what = " (" .. self.entity.name .. ")";
+  end
+  local p = player.position;
+  log(string.format("%s at (%.1f, %.1f) on the way to (%.1f, %.1f)%s, giving up",
+    reason, p.x, p.y, self.x, self.y, what), "WARN");
+end
+
+-- Switches to the pathfinder the first time the character stops making
+-- progress, gives up the second time. No progress is either not moving for
+-- STUCK_TICKS, or, while steering, moving without getting any closer for
+-- LOST_TICKS: walking in circles or off in the wrong direction is no better
+-- than standing still. (Going round a big rock takes a few seconds, hence
+-- the longer limit. The pathfinder's route may lead away from the target
+-- for a while, so on it only moving counts.)
+function MoveToPointTask:checkProgress(player)
+  local p = player.position;
+  if(not self.progress_position or util.distance(p, self.progress_position) > STUCK_DISTANCE) then
+    self.progress_position = {x=p.x, y=p.y};
+    self.progress_tick = game.tick;
+  end
+  local distance = util.distance(p, {x=self.x, y=self.y});
+  if(not self.best_distance or distance < self.best_distance - STUCK_DISTANCE) then
+    self.best_distance = distance;
+    self.closer_tick = game.tick;
+  end
+  local steering = not (self.path_requested and not self.following_done);
+  local stuck = game.tick - self.progress_tick > STUCK_TICKS;
+  local lost = steering and game.tick - self.closer_tick > LOST_TICKS;
+  if(stuck or lost) then
+    if(self.path_requested) then
+      self:giveUp(player, stuck and "Stuck even on the pathfinder's route" or "Lost even after the pathfinder's route");
+    else
+      log(string.format("%s at (%.1f, %.1f), asking the pathfinder", stuck and "Blocked" or "Not getting closer", p.x, p.y), "INFO");
+      self:requestPath(player);
+    end
+  end
+end
+
+function MoveToPointTask:requestPath(player)
+  local prototype = player.character.prototype;
+  -- big entities (rocks) can't be walked into: getting next to them is enough
+  local radius = 1;
+  if(self.entity and self.entity.valid and self.reach) then
+    local box = self.entity.prototype.collision_box;
+    radius = math.max(box.right_bottom.x - box.left_top.x, box.right_bottom.y - box.left_top.y) / 2 + 1.5;
+  end
+  self.path_requested = true;
+  self.path = nil;
+  self.request_id = player.surface.request_path{
+    bounding_box = prototype.collision_box,
+    collision_mask = prototype.collision_mask,
+    start = player.position,
+    goal = {x=self.x, y=self.y},
+    force = player.force,
+    radius = radius,
+    entity_to_ignore = player.character,
+    pathfind_flags = {cache = false},
+  };
+end
+
+-- Follows the pathfinder's route. Returns false when there is nothing to
+-- follow (route finished), so steering takes over for the last bit.
+function MoveToPointTask:followPath(player)
+  if(not self.path) then
+    local results = storage.path_results;
+    local result = results and results[self.request_id];
+    player.walking_state = {walking = false, direction = defines.direction.north};
+    self.progress_tick = game.tick; -- waiting for the answer isn't being stuck
+    if(not result) then
+      return true;
+    end
+    results[self.request_id] = nil;
+    if(result.path) then
+      self.path = {};
+      for i, waypoint in ipairs(result.path) do
+        self.path[i] = waypoint.position;
+      end
+      self.waypoint = 1;
+    elseif(result.try_again_later) then
+      self:requestPath(player);
+    else
+      self:giveUp(player, "No route");
+    end
+    return true;
+  end
+
+  local p = player.position;
+  local target = self.path[self.waypoint];
+  while(target and util.distance(p, target) < 0.3) do
+    self.waypoint = self.waypoint + 1;
+    target = self.path[self.waypoint];
+  end
+  if(not target) then
+    self.path = nil;
+    self.following_done = true;
+    self.closer_tick = game.tick; -- steering again: give it its full time
+    return false;
+  end
+  local direction = self:getDirection(self:getBearingToTarget(player, target));
+  player.walking_state = {walking = true, direction = defines.direction[direction]};
+  return true;
+end
+
+-- Debug feelers are LuaRenderObjects (see tick); plain `true` placeholders
+-- are used when debug drawing is off.
+function MoveToPointTask:destroyFeelers()
+  if(not self.feelers) then return end
+  for i, feeler in pairs(self.feelers) do
+    if(type(feeler) ~= "boolean" and feeler.valid) then
+      feeler.destroy();
+    end
+  end
+  self.feelers = nil;
+end
+
+function MoveToPointTask:toString()
+  return string.format("MoveToPointTask - (%.1f, %.1f)", self.x, self.y);
 end
 
 function MoveToPointTask:getBearingToTarget(player, target)
@@ -85,18 +255,31 @@ end
 
 function MoveToPointTask:tick (args)
   local player = args.player;
+  self:checkProgress(player);
+  if(self.stuck) then
+    return;
+  end
+  if(self.path_requested and not self.following_done and self:followPath(player)) then
+    return;
+  end
   local target_bearing = self:getBearingToTarget(player);
   if(not self.current_bearing) then
     self.current_bearing = target_bearing;
   end
-  local turn_amount = target_bearing - self.current_bearing;
+  local turn_amount = shortest_turn(self.current_bearing, target_bearing);
   self.current_bearing = self.current_bearing + (sign(turn_amount) * math.min(max_turn_rate, math.abs(turn_amount)));
 
   if(not self.feelers) then
     self.feelers = {};
     for i=1, num_projections do
       if(debug) then
-        local feeler = player.surface.create_entity{name="pathing-feeler", position=player.position};
+        local feeler = rendering.draw_circle{
+          color={r=1, g=0.5, b=0, a=0.8},
+          radius=feeler_width / 2,
+          width=2,
+          target=player.position,
+          surface=player.surface
+        };
         self.feelers[#self.feelers + 1] = feeler;
       else
         self.feelers[#self.feelers + 1] = true;
@@ -138,10 +321,10 @@ function MoveToPointTask:tick (args)
         log("Terrain collision detected at (" .. tile_position.x .. ", ".. tile_position.y ..") -> " .. relative_bearing, "DEBUG");
         --self.current_bearing = self.current_bearing - relative_bearing;
       end
-      --tree,stone-rock,small-rock
-      for z, type in pairs({{"type", "tree"}, {"name", "stone-rock"}, {"name", "small-rock"}}) do
+      --trees and rocks (in 2.0 small-rock is only a decorative, not an obstacle)
+      for z, filter in pairs({{"type", "tree"}, {"name", {"huge-rock", "big-rock", "big-sand-rock"}}}) do
         local params = {area=collision_area}
-        params[type[1]] = type[2];
+        params[filter[1]] = filter[2];
         local entities = player.surface.find_entities_filtered(params);
         if(#entities > 0) then
           --has_collision = true;
@@ -150,19 +333,19 @@ function MoveToPointTask:tick (args)
           for j, entity in pairs(entities) do
             local entity_bearing = self:getBearingToTarget(player, entity.position);
             local relative_bearing = entity_bearing - self.current_bearing;
-            log("Entity collision detected at (" .. entity.position.x .. ", ".. entity.position.y ..") -> " .. relative_bearing, "INFO");
+            log("Entity collision detected at (" .. entity.position.x .. ", ".. entity.position.y ..") -> " .. relative_bearing, "DEBUG");
             total_steering_force = total_steering_force + self:multiplyBearing(relative_bearing, i);
           end
         end
       end
     end
     if(debug) then
-      feeler.teleport(new_position);
+      feeler.target = new_position;
     end
   end
   self.current_bearing = self.current_bearing - total_steering_force;
-  if(true or total_steering_force > 0) then
-    log("Applying steering force of " .. total_steering_force, "INFO");
+  if(total_steering_force ~= 0) then
+    log("Applying steering force of " .. total_steering_force, "DEBUG");
   end
   self:clampBearing();
   local direction = self:getDirection(self.current_bearing);

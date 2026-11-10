@@ -3,6 +3,7 @@ require 'resource_source';
 require 'controllers/tasks/moveToPointTask'
 require 'controllers/tasks/mineResourceTask'
 
+-- An ore tile (resource entity) that the player mines by hand.
 GroundResourceSource = ResourceSource:new();
 
 function GroundResourceSource:compute_types()
@@ -11,10 +12,12 @@ function GroundResourceSource:compute_types()
   };
 end
 
--- {type=type, qty=#, player=player, machine=GoalMachine}
+-- {type=type, qty=# wanted in inventory, player=player, machine=GoalMachine}
 function GroundResourceSource:gather(opts)
+  local position = self.entity.position;
   opts.machine:pushStart({
-    MoveToPointTask:new(self.entity.position),
-    MineResourceTask:new{target=self.entity, qty=opts.qty}
+    -- ore must be walked onto (hand mining reach is short), so no `reach`
+    MoveToPointTask:new{x=position.x, y=position.y, entity=self.entity},
+    MineResourceTask:new{target=self.entity, type=opts.type, qty=opts.qty}
   });
 end

@@ -1,5 +1,5 @@
 require 'tasks/task';
-require '../util/logger';
+require 'util/logger';
 GoalMachine = Task:new()
 
 function GoalMachine:new(o)
@@ -86,4 +86,33 @@ function GoalMachine:enqueueGoalItem(item)
   end
   -- g is last
   g.next = item;
+end
+
+-- What the tasks on the stack still want in the inventory, as {name = total}.
+-- Starts at the stack entry `from` (default: the top). When several tasks
+-- want the same item the largest total counts: totals overlap (a gather
+-- task and the craft task that pushed it want the same stone), so adding
+-- them up would count things twice.
+function GoalMachine:needs(arg, from)
+  local result = {};
+  local entry = from or self.goals;
+  while(entry ~= nil) do
+    for name, total in pairs(entry.current:needs(arg) or {}) do
+      result[name] = math.max(result[name] or 0, total);
+    end
+    entry = entry.next;
+  end
+  return result;
+end
+
+-- The stack entry right below `goal`, or nil.
+function GoalMachine:entryBelow(goal)
+  local entry = self.goals;
+  while(entry ~= nil) do
+    if(entry.current == goal) then
+      return entry.next;
+    end
+    entry = entry.next;
+  end
+  return nil;
 end

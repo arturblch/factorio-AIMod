@@ -31,6 +31,6 @@ BurnerToFurnaceModule = BaseModule:new{
     {building=2, type="coal", slot="fuel", ongoing=true}
   },
   outputs={
-    {building=2, type="iron-plate"}
+    {building=2, type="iron-plate", slot="output"}
   }
 };

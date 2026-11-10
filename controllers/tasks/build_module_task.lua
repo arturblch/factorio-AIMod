@@ -2,16 +2,116 @@ require 'task'
 require 'util'
 require 'util/logger'
 require 'controllers/tasks/build_building_task'
+require 'controllers/tasks/craftRecipeTask'
+require 'controllers/managers/module_resource_source'
 require 'util/inventories'
 
+--[[
+  BuildModuleTask
+  Finds a spot for a module (a small fixed layout of buildings), makes sure
+  the buildings are in the inventory and then builds them. If a building
+  couldn't be placed, the ones that were are picked up again and the module
+  is tried at another spot, MAX_ATTEMPTS times in all.
+   - module: BaseModule; the module to build
+]]
 BuildModuleTask = Task:new()
 local log = Logger.makeLogger("BuildModuleTask");
 
+local MAX_ATTEMPTS = 3;
+local BAD_SPOT_RADIUS = 8; -- don't retry closer than this to a spot that failed
+
+-- Done once every building of the module stands, or when it gave up.
+-- (Only checked when this task is on top again, i.e. after the build tasks.)
 function BuildModuleTask:achieved (args)
-  return self.goal_set;
+  if(self.failed) then
+    return true;
+  end
+  return self.built ~= nil and self.built:allPlaced();
 end
 
-local range = 100;
+-- Remembers a module that couldn't be built, for the final message.
+local function record_failure(player, name)
+  storage.failed_goals = storage.failed_goals or {};
+  local list = storage.failed_goals[player.index] or {};
+  list[#list + 1] = name;
+  storage.failed_goals[player.index] = list;
+end
+
+function BuildModuleTask:fail(player, message)
+  log(message, "WARN");
+  player.print("AIMod: " .. message);
+  record_failure(player, self.module.name);
+  self.failed = true;
+end
+
+-- Called when the build tasks are done but a building is missing.
+function BuildModuleTask:retryElsewhere(player)
+  local missing = {};
+  for i, building in ipairs(self.built.buildings) do
+    local entity = building.entity;
+    if(entity and entity.valid) then
+      player.mine_entity(entity, true); -- back into the inventory, fuel included
+    else
+      missing[#missing + 1] = building.type;
+    end
+  end
+  storage.resource_managers[player.index]:unregister_source(self.source);
+  self.bad_spots = self.bad_spots or {};
+  self.bad_spots[#self.bad_spots + 1] = self.location;
+  self.attempts = (self.attempts or 0) + 1;
+  log(self.module.name .. " at " .. self.location.x .. ", " .. self.location.y .. " is missing " ..
+    table.concat(missing, ", ") .. " (attempt " .. self.attempts .. ")", "WARN");
+  self.location, self.built, self.source, self.goal_set = nil, nil, nil, false;
+  if(self.attempts >= MAX_ATTEMPTS) then
+    self:fail(player, "could not build " .. self.module.name .. " after " .. self.attempts .. " attempts");
+  end
+end
+
+function BuildModuleTask:isBadSpot(position)
+  for i, spot in ipairs(self.bad_spots or {}) do
+    if(util.distance(spot, position) < BAD_SPOT_RADIUS) then
+      return true;
+    end
+  end
+  return false;
+end
+
+-- Until the build tasks are queued: the buildings (and what crafting the
+-- missing ones takes) and the first round of fuel.
+function BuildModuleTask:needs (args)
+  if(self.failed or self.built) then
+    return nil;
+  end
+  local player = args.player;
+  local totals = {};
+  local function add(name, amount)
+    totals[name] = (totals[name] or 0) + amount;
+  end
+  local counts = {};
+  for i, building in pairs(self.module.buildings) do
+    counts[building.type] = (counts[building.type] or 0) + 1;
+  end
+  for type, count in pairs(counts) do
+    add(type, count);
+    local missing = count - Inventories.count_with_queue(player, type);
+    local recipe = player.force.recipes[type];
+    if(missing > 0 and recipe) then
+      for name, amount in pairs(Recipes.needed_totals(player, recipe, missing)) do
+        add(name, amount);
+      end
+    end
+  end
+  for name, amount in pairs(self.module:fuelNeeds()) do
+    add(name, amount);
+  end
+  return totals;
+end
+
+function BuildModuleTask:toString()
+  return "BuildModuleTask - " .. self.module.name;
+end
+
+local SEARCH_RADII = {100, 250};
 local impassibleTiles = {
   "out-of-map",
   "deepwater",
@@ -20,10 +120,55 @@ local impassibleTiles = {
   "water-green"
 };
 local TILE_OFFSET = 0;
+
+-- Resources a drill of `prototype` standing at `center` would mine: those in
+-- its mining area (which can be larger than the drill itself) whose category
+-- it can mine.
+local function resources_in_mining_area(surface, prototype, center)
+  local radius = prototype.get_mining_drill_radius();
+  local area = {{center.x - radius, center.y - radius}, {center.x + radius, center.y + radius}};
+  local categories = prototype.resource_categories or {};
+  local result = {};
+  for i, resource in pairs(surface.find_entities_filtered{area=area, type="resource"}) do
+    if(categories[resource.prototype.resource_category]) then
+      result[#result + 1] = resource;
+    end
+  end
+  return result;
+end
+
+-- A drill mines whatever lies in its mining area, one tile after another, so
+-- a second resource type would end up in whatever the drill feeds (a furnace
+-- with iron ore can't take stone; a drill can't burn iron ore) and stop the
+-- module. Every drill of the module must have its own resource (the
+-- building's `resource`, or the module's) under it and nothing else.
+function BuildModuleTask:drillsMineOnlyTheirResource(surface, corner)
+  for i, building in pairs(self.module.buildings) do
+    local prototype = prototypes.entity[building.type];
+    if(prototype and prototype.type == "mining-drill") then
+      local expected = building.resource or self.module.resource;
+      local center = {x=corner.x + building.position.x, y=corner.y + building.position.y};
+      local resources = resources_in_mining_area(surface, prototype, center);
+      if(#resources == 0) then
+        return false;
+      end
+      for j, resource in ipairs(resources) do
+        if(resource.name ~= expected) then
+          return false;
+        end
+      end
+    end
+  end
+  return true;
+end
+
 function BuildModuleTask:canBuildAtPosition(player, position)
   --for each item in the geometry, verify
   --  a) it's not water (unless it should be)
   --  b) it has the resource it needs (if it need one)
+  --  c) none of our buildings is already there
+  --  d) no cliff runs through it (cliffs can't be cleared by hand)
+  --then that no drill would mine a second kind of resource
   for i, item in pairs(self.module.geometry) do
     local offset = item.position;
     local offsetPosition = {x=position.x + offset.x + TILE_OFFSET, y=position.y + offset.y + TILE_OFFSET};
@@ -37,6 +182,15 @@ function BuildModuleTask:canBuildAtPosition(player, position)
           return false;
         end
       end
+    end
+    for i, entity in pairs(player.surface.find_entities_filtered{position=offsetPosition, force=player.force}) do
+      if(entity.type ~= "character") then
+        return false;
+      end
+    end
+    local tile_area = {{offsetPosition.x - 0.5, offsetPosition.y - 0.5}, {offsetPosition.x + 0.5, offsetPosition.y + 0.5}};
+    if(player.surface.count_entities_filtered{area=tile_area, type="cliff", limit=1} > 0) then
+      return false;
     end
     if(item.resource ~= nil) then
       local entities = player.surface.find_entities_filtered{position=offsetPosition, type="resource"}
@@ -54,54 +208,94 @@ function BuildModuleTask:canBuildAtPosition(player, position)
       end
     end
   end
-  return true;
+  -- same corner as in tick(): position is the center of geometry tile (0, 0)
+  local corner = {x=math.floor(position.x), y=math.floor(position.y)};
+  return self:drillsMineOnlyTheirResource(player.surface, corner);
+end
+
+-- Center of the module's geometry tile (0, 0), or nil.
+function BuildModuleTask:findLocation(player)
+  local origin = player.position;
+  for i, radius in ipairs(SEARCH_RADII) do
+    local resources = player.surface.find_entities_filtered{position=origin, radius=radius, name=self.module.resource}
+    table.sort(resources, function(a, b)
+      return util.distance(origin, a.position) < util.distance(origin, b.position);
+    end)
+    for j, resource in ipairs(resources) do
+      local position = resource.position;
+      if(not self:isBadSpot(position) and self:canBuildAtPosition(player, position)) then
+        return {x=position.x, y=position.y};
+      end
+    end
+  end
+  return nil;
 end
 
 function BuildModuleTask:tick (args)
   local player = args.player;
-  local required_buildings = {};
-  for i, building in pairs(self.module.buildings) do
-    if(not required_buildings[building.type]) then
-      required_buildings[building.type] = 0;
-    end
-    required_buildings[building.type] = required_buildings[building.type] + 1;
+
+  if(self.built) then
+    -- the build tasks are done but achieved() said a building is missing
+    self:retryElsewhere(player);
+    return;
   end
 
-  for type, count in pairs(required_buildings) do
+  if(not self.location) then
+    if(self.module.resource == nil) then
+      self:fail(player, "don't know where to put " .. self.module.name .. ": it needs no resource");
+      return;
+    end
+    self.location = self:findLocation(player);
+    if(not self.location) then
+      self:fail(player, "no place to build " .. self.module.name .. ": no suitable " ..
+        self.module.resource .. " spot within " .. SEARCH_RADII[#SEARCH_RADII] .. " tiles");
+      return;
+    end
+    log("Building " .. self.module.name .. " at " .. self.location.x .. ", " .. self.location.y, "INFO");
+  end
 
-    local inv_count = Inventories.total_craftable_count(player, type);
+  -- get the buildings first, the spot is reserved in self.location
+  local required_buildings = {};
+  for i, building in pairs(self.module.buildings) do
+    required_buildings[building.type] = (required_buildings[building.type] or 0) + 1;
+  end
+  -- what is still in the hand-craft queue counts: it is crafted on the way
+  -- to the spot, and PlaceBuildingTask waits for it if need be
+  local missing = false;
+  for type, count in pairs(required_buildings) do
+    local inv_count = Inventories.count_with_queue(player, type);
     if(inv_count < count) then
       local required_count = count - inv_count;
       log("We require " .. required_count .. " more " .. type .. " for this module", "INFO");
-      args.machine:pushSingle(CraftRecipeTask:new{recipe=type, qty=required_count});
+      args.machine:pushSingle(CraftRecipeTask:new{recipe=type, qty=required_count, background=true});
+      missing = true;
     end
   end
-  if(self.module.resource ~= nil) then
-    local resources = player.surface.find_entities_filtered{area =
-      {{player.position.x - range, player.position.y - range}, {player.position.x + range, player.position.y + range}},
-      name=self.module.resource}
-    table.sort(resources, function(a, b)
-      return util.distance(player.position, a.position) < util.distance(player.position, b.position);
-    end)
-    for i, resource in pairs(resources) do
-      local position = resource.position;
-      if(self:canBuildAtPosition(player, position)) then
-        --lets do it!
-        log("Building " .. self.module.name .. " at " .. position.x .. ", " .. position.y, "INFO");
-        local tasks = {};
-        for i, building in pairs(self.module.buildings) do
-          local building_position = {x=position.x + building.position.x, y=position.y + building.position.y};
-          tasks[#tasks + 1] = BuildBuildingTask:new{type=building.type,
-                                                      building=building,
-                                                      position=building_position,
-                                                      direction=building.direction or defines.direction.north}
+  if(missing) then
+    return;
+  end
 
-        end
-        args.machine:pushNext(tasks);
-        self.goal_set = true;
-        return
-      end
-    end
-    log("Cannot build " .. self.module.name, "WARN");
+  -- Geometry offsets are tile centers relative to tile (0, 0); building
+  -- offsets are entity centers relative to that tile's top-left corner, so a
+  -- 2x2 building at {x=1, y=1} covers geometry tiles 0..1 x 0..1.
+  local module = self.module:instantiate();
+  local corner = {x=math.floor(self.location.x), y=math.floor(self.location.y)};
+  local tasks = {};
+  for i, building in pairs(module.buildings) do
+    local building_position = {x=corner.x + building.position.x, y=corner.y + building.position.y};
+    tasks[#tasks + 1] = BuildBuildingTask:new{type=building.type,
+                                              building=building,
+                                              position=building_position,
+                                              direction=building.direction or defines.direction.north}
   end
+  -- light it up right away so it produces while the bot does other things
+  for i, task in ipairs(module:startTasks()) do
+    tasks[#tasks + 1] = task;
+  end
+  args.machine:pushStart(tasks);
+  -- not usable until every building stands (see ModuleResourceSource:is_valid)
+  self.source = ModuleResourceSource:new{module=module};
+  storage.resource_managers[player.index]:register_source(self.source);
+  self.built = module;
+  self.goal_set = true;
 end

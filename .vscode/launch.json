@@ -1,0 +1,15 @@
+{
+  // Requires the "Factorio Modding Tool Kit" extension
+  // (justarandomgeek.factoriomod-debug). Before the first launch run the
+  // command "Factorio: Select Version" and point it at
+  // C:\Program Files (x86)\Steam\steamapps\common\Factorio\bin\x64\factorio.exe
+  // — this also generates the Lua API type definitions for autocompletion.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "factoriomod",
+      "request": "launch",
+      "name": "Factorio: debug AIMod"
+    }
+  ]
+}

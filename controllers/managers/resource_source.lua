@@ -30,3 +30,8 @@ end
 function ResourceSource:is_valid()
   return self.entity.valid;
 end
+
+-- Whether the source has the item ready to be picked up right now (modules).
+function ResourceSource:has_output(type)
+  return false;
+end

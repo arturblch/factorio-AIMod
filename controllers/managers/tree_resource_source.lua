@@ -2,6 +2,7 @@ require 'resource_source';
 
 require 'controllers/tasks/mine_entity_task'
 
+-- Anything that is mined by hand as a whole entity: trees, but also rocks.
 TreeResourceSource = ResourceSource:new();
 
 function TreeResourceSource:compute_types()
