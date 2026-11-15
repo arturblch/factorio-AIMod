@@ -97,6 +97,130 @@ function BaseModule:hasOutputAvailable(product)
   return self:outputCount(product) > 0;
 end
 
+-- Production rates. Everything is derived from prototypes, so a module's rate
+-- follows the game's numbers (a burner drill mines 0.25 ore/s, a stone
+-- furnace smelts a plate in 3.2 s) and needs no tuning in the module data.
+
+local function average_amount(product)
+  local amount = product.amount or ((product.amount_min or 0) + (product.amount_max or 0)) / 2;
+  return amount * (product.independent_probability or product.probability or 1);
+end
+
+-- Items per second a drill building mines and which item, or 0, nil when the
+-- building is no drill.
+local function drill_rate(module, building)
+  local drill = prototypes.entity[building.type];
+  local resource = prototypes.entity[building.resource or module.resource or ""];
+  if(not (drill and drill.type == "mining-drill" and resource)) then
+    return 0, nil;
+  end
+  local mineable = resource.mineable_properties;
+  for i, product in pairs(mineable.products or {}) do
+    if(product.type == "item") then
+      return drill.mining_speed / mineable.mining_time * average_amount(product), product.name;
+    end
+  end
+  return 0, nil;
+end
+
+-- Items of `item` per second a building burns as fuel at full work, or 0.
+local function fuel_burn_rate(building, item)
+  local prototype = prototypes.entity[building.type];
+  local burner = prototype and prototype.burner_prototype;
+  local fuel = prototypes.item[item];
+  if(not (burner and fuel and fuel.fuel_value > 0)) then
+    return 0;
+  end
+  for i, category in pairs(fuel.fuel_categories or {}) do
+    if(burner.fuel_categories[category]) then
+      -- energy usage is per tick
+      return prototype.get_max_energy_usage() * 60 / (fuel.fuel_value * burner.effectivity);
+    end
+  end
+  return 0;
+end
+
+-- The recipe a crafting machine uses to make `product` out of one of the
+-- `inputs` ({item = true}): recipe, ingredient, ingredient amount, product
+-- amount. Cached: prototypes don't change while the game runs.
+local recipe_cache = {};
+local function machine_recipe(machine, product, inputs)
+  for name, recipe in pairs(prototypes.recipe) do
+    local made = 0;
+    for i, result in pairs(recipe.products) do
+      if(result.type == "item" and result.name == product) then
+        made = average_amount(result);
+      end
+    end
+    local category_fits = false;
+    for category in pairs(machine.crafting_categories or {}) do
+      if(recipe.has_category(category)) then
+        category_fits = true;
+      end
+    end
+    if(made > 0 and category_fits and #recipe.ingredients == 1 and inputs[recipe.ingredients[1].name]) then
+      local ingredient = recipe.ingredients[1];
+      return recipe, ingredient.name, ingredient.amount, made;
+    end
+  end
+  return nil;
+end
+
+-- Items of `product` per second the module makes when it runs without a
+-- break (fueled, output emptied in time), net of what it burns itself; 0 if
+-- it doesn't make it.
+-- - "output" outputs: the machines' crafting speed, or what the drills feed
+--   them, whichever is less (a burner drill can't keep a stone furnace busy).
+-- - "fuel" outputs: what the drills mine, less what the module's own
+--   burners take of it (BurnerToBurner feeds itself from its own coal).
+function BaseModule:productionRate(product)
+  local mined = {};
+  for i, building in ipairs(self.buildings) do
+    local rate, item = drill_rate(self, building);
+    if(item) then
+      mined[item] = (mined[item] or 0) + rate;
+    end
+  end
+
+  local inputs = {};
+  for item in pairs(mined) do
+    inputs[#inputs + 1] = item;
+  end
+  table.sort(inputs);
+  local capacity, feed, fuel_output = 0, 0, false;
+  for i, output in ipairs(self.outputs) do
+    if(output.type == product) then
+      if(output.slot == "fuel") then
+        fuel_output = true;
+      else
+        local machine = prototypes.entity[self.buildings[output.building].type];
+        local key = machine.name .. "|" .. product .. "|" .. table.concat(inputs, ",");
+        local cached = recipe_cache[key];
+        if(not cached) then
+          local recipe, ingredient, needed, made = machine_recipe(machine, product, mined);
+          cached = recipe and {energy=recipe.energy, ingredient=ingredient, needed=needed, made=made} or {};
+          recipe_cache[key] = cached;
+        end
+        if(cached.energy) then
+          capacity = capacity + machine.get_crafting_speed() / cached.energy * cached.made;
+          feed = (mined[cached.ingredient] or 0) / cached.needed * cached.made;
+        end
+      end
+    end
+  end
+  if(capacity > 0) then
+    return math.min(capacity, feed);
+  end
+  if(fuel_output) then
+    local burnt = 0;
+    for i, building in ipairs(self.buildings) do
+      burnt = burnt + fuel_burn_rate(building, product);
+    end
+    return math.max((mined[product] or 0) - burnt, 0);
+  end
+  return 0;
+end
+
 -- A fuel input that has burnt out: nothing in the slot, nothing burning.
 function BaseModule:isStarved()
   for i, input in ipairs(self.inputs) do

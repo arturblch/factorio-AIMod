@@ -106,6 +106,24 @@ local function snapshot(tick, player, machine)
 end
 
 --[[
+  Other goals (`--test-arg goal:copper-plate:10,have:copper-cable:20`,
+  run-headless.ps1 -Goals): replace the bot's goal list before it starts.
+  goal:<item>:<n> is a ProductionGoalTask (n per minute), have:<item>:<n> a
+  GatherResourceTask (n in the inventory), kept in the given order.
+]]
+local function goal_flags()
+  local goals = {}
+  for kind, item, n in (script.test_arg or ""):gmatch("(%a+):([%w%-]+):([%d%.]+)") do
+    if kind == "goal" then
+      goals[#goals + 1] = ProductionGoalTask:new{ item = item, per_minute = tonumber(n) }
+    elseif kind == "have" then
+      goals[#goals + 1] = GatherResourceTask:new{ type = item, qty = tonumber(n) }
+    end
+  end
+  return goals
+end
+
+--[[
   Cursor noise (`--test-arg cursor-noise`, run-headless.ps1 -CursorNoise):
   a player moving the mouse over other entities changes their selection, and
   a character mines whatever is selected. Input is applied at the start of a
@@ -210,6 +228,15 @@ script.on_event(defines.events.on_tick, function(event)
   local t = storage.test
   local player = game.get_player(1)
   local machine = storage.goal_machines and storage.goal_machines[1]
+  if machine and not t.goals_checked then
+    t.goals_checked = true
+    local goals = goal_flags()
+    if #goals > 0 then
+      machine.goals = nil
+      machine:pushStart(goals)
+      log("[test] goals replaced: " .. describe_stack(machine))
+    end
+  end
   if player and machine and noise_enabled() then
     cursor_noise(player, machine, event.tick, t)
   end
