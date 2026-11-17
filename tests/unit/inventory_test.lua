@@ -85,6 +85,39 @@ T.describe("Mining with a full inventory", function()
     T.falsy(getmetatable(top(machine)) == MakeRoomTask, "with two free slots")
   end)
 
+  T.it("gives a tile up when it can't be selected", function()
+    local ore = Lab.ore("iron-ore", 0, 0)
+    local player = Fakes.player{ surface = Lab.surface(), selects = false }
+    local machine = GoalMachine:new()
+    local task = MineResourceTask:new{ target = ore, type = "iron-ore", qty = 5 }
+    task:tick{ player = player, machine = machine }
+    T.falsy(task:achieved{ player = player }, "at first")
+    task.unselectable_since = game.tick - 120
+    task:tick{ player = player, machine = machine }
+    T.truthy(Unreachable.is(ore), "unreachable")
+    T.truthy(task:achieved{ player = player }, "after 2 s")
+    T.falsy(player.mining_state.mining, "stopped mining")
+  end)
+
+  T.it("keeps mining a tile that is selected", function()
+    local ore = Lab.ore("iron-ore", 0, 0)
+    local player = Fakes.player{ surface = Lab.surface() }
+    local task = MineResourceTask:new{ target = ore, type = "iron-ore", qty = 5, unselectable_since = game.tick - 120 }
+    task:tick{ player = player, machine = GoalMachine:new() }
+    T.falsy(Unreachable.is(ore), "unreachable")
+    T.eq(task.unselectable_since, nil, "timer reset")
+    T.truthy(player.mining_state.mining, "mining")
+  end)
+
+  T.it("doesn't mine a tree that gets selected over the tile", function()
+    local ore = Lab.ore("iron-ore", 0, 0)
+    local tree = Lab.entity("tree-01", { 0.5, -0.5 }, "neutral")
+    local player = Fakes.player{ surface = Lab.surface(), selects = function() return tree end }
+    player.mining_state = { mining = true }
+    MineResourceTask:new{ target = ore, type = "iron-ore", qty = 5 }:tick{ player = player, machine = GoalMachine:new() }
+    T.falsy(player.mining_state.mining, "not mining")
+  end)
+
   T.it("mines as usual while a stack of the item has room", function()
     local player = Fakes.player{ surface = Lab.surface(), slots = 1, items = { ["iron-ore"] = 10 } }
     local machine = GoalMachine:new()

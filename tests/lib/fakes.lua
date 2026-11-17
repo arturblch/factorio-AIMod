@@ -66,7 +66,10 @@ end
    - craftable: number returned by get_craftable_count (default 0)
    - slots: size of the main inventory (default: unlimited)
    - crafting_queue: list of {recipe, count, prerequisite}
-  Records: printed, crafted, selected_position, and walking_state /
+   - selects: function(position) -> entity or nil, what update_selected_entity
+     selects (default: the first entity there that isn't a character);
+     false: nothing ever gets selected
+  Records: printed, crafted, selected_position, selected, and walking_state /
   mining_state are plain fields.
 ]]
 function Fakes.player(opts)
@@ -98,7 +101,19 @@ function Fakes.player(opts)
     player.crafted[#player.crafted + 1] = { recipe = name, count = args.count }
     return args.count
   end
-  function player.update_selected_entity(position) player.selected_position = position end
+  function player.update_selected_entity(position)
+    player.selected_position = position
+    if opts.selects == false then
+      player.selected = nil
+    elseif opts.selects then
+      player.selected = opts.selects(position)
+    else
+      player.selected = nil
+      for _, entity in pairs(player.surface.find_entities_filtered{ position = position }) do
+        if entity.type ~= "character" then player.selected = entity break end
+      end
+    end
+  end
   -- picks a real entity up: gone from the map, one item in the inventory
   player.mined = {}
   function player.mine_entity(entity, force)

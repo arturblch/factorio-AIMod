@@ -1,5 +1,6 @@
 require 'task'
 require 'util'
+require 'util/logger'
 require 'util/inventories'
 require 'util/unreachable'
 require 'controllers/tasks/moveToPointTask'
@@ -12,6 +13,14 @@ require 'controllers/tasks/moveToPointTask'
    - qty: number; how many of `type` the inventory should hold when done
 ]]
 MineResourceTask = Task:new()
+local log = Logger.makeLogger("MineResourceTask");
+
+-- The character mines what is selected. Standing next to a tile rather than
+-- on it (a tree in the way), the tile may not get selected at all, or a tree
+-- over it gets selected instead. Then nothing is mined (rather than the
+-- tree), and after this long the tile counts as unreachable and the gather
+-- task above picks another one.
+local UNSELECTABLE_TICKS = 120;
 
 function MineResourceTask:achieved (args)
   local player = args.player;
@@ -46,7 +55,18 @@ function MineResourceTask:tick (args)
   end
   if(player.can_reach_entity(self.target)) then
     player.update_selected_entity(self.target.position)
-    player.mining_state = { mining = true, position = self.target.position }
+    if(player.selected == self.target) then
+      self.unselectable_since = nil;
+      player.mining_state = { mining = true, position = self.target.position }
+    else
+      player.mining_state = {mining = false};
+      self.unselectable_since = self.unselectable_since or game.tick;
+      if(game.tick - self.unselectable_since >= UNSELECTABLE_TICKS) then
+        local p = self.target.position;
+        log("Can't select " .. self.target.name .. " at " .. p.x .. ", " .. p.y .. " to mine it, trying another one", "INFO");
+        Unreachable.mark(self.target); -- achieved() ends the task
+      end
+    end
   else
     local position = self.target.position;
     args.machine:pushSingle(MoveToPointTask:new{x=position.x, y=position.y, entity=self.target});
