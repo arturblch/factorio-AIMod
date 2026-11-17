@@ -99,7 +99,7 @@ T.describe("GrowthTask", function()
 
   T.it("stops when no module can be added", function()
     storage.goals_done = { [1] = true }
-    storage.failed_goals = { [1] = { "BurnerToFurnace", "BurnerToFurnaceCopper", "BurnerToFurnaceStone", "BurnerToBurner" } }
+    storage.failed_goals = { [1] = { "BurnerToFurnace", "BurnerToFurnaceCopper", "StonePairFurnace", "BurnerToFurnaceStone", "BurnerToBurner" } }
     local growth = GrowthTask:new{}
     machine:pushSingle(growth)
     growth:tick{ player = player, machine = machine }

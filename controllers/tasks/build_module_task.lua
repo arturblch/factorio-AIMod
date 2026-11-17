@@ -315,7 +315,11 @@ function BuildModuleTask:tick (args)
     if(inv_count < count) then
       local required_count = count - inv_count;
       log("We require " .. required_count .. " more " .. type .. " for this module", "INFO");
-      args.machine:pushSingle(CraftRecipeTask:new{recipe=type, qty=required_count, background=true});
+      -- qty counts crafts: a belt craft makes two
+      local recipe = prototypes.recipe[type];
+      local per_craft = recipe and Recipes.product_amount(recipe, type) or 1;
+      local crafts = math.ceil(required_count / math.max(per_craft, 1));
+      args.machine:pushSingle(CraftRecipeTask:new{recipe=type, qty=crafts, background=true});
       missing = true;
     end
   end

@@ -238,6 +238,36 @@ function BaseModule:productionRate(product)
   return 0;
 end
 
+-- What the drills feed the furnaces over what the furnaces can smelt, for
+-- the first smelted output (1 = balanced, below = idle furnaces, above =
+-- drills waiting); nil when the module smelts nothing.
+function BaseModule:smeltingLoad()
+  local mined = {};
+  for i, building in ipairs(self.buildings) do
+    local rate, item = drill_rate(self, building);
+    if(item) then
+      mined[item] = (mined[item] or 0) + rate;
+    end
+  end
+  for i, output in ipairs(self.outputs) do
+    local capacity, feed = 0, 0;
+    for j, building in ipairs(self.buildings) do
+      local machine = prototypes.entity[building.type];
+      if(machine.type == "furnace") then
+        local recipe, ingredient, needed, made = machine_recipe(machine, output.type, mined);
+        if(recipe) then
+          capacity = capacity + machine.get_crafting_speed() / recipe.energy * made;
+          feed = (mined[ingredient] or 0) / needed * made;
+        end
+      end
+    end
+    if(capacity > 0) then
+      return feed / capacity;
+    end
+  end
+  return nil;
+end
+
 -- Items of `fuel` per second the module needs brought to it while it works:
 -- what its bot-fueled burners take at full work. A module that feeds
 -- itself (BurnerToBurner) needs none; its own burning is already taken off

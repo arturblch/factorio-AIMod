@@ -144,5 +144,5 @@ function GrowthTask:tick (args)
   end
   local rate = ProductionGoalTask.rate(player, item);
   log("Growing: one more module for " .. item .. " (" .. rate .. "/min now)", "INFO");
-  args.machine:pushSingle(ProductionGoalTask:new{item=item, per_minute=rate + 1});
+  args.machine:pushSingle(ProductionGoalTask:new{item=item, per_minute=rate + 1, growth=true});
 end

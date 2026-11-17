@@ -138,19 +138,29 @@ function AIMod.tick_bot(player, machine)
   end
 end
 
--- Lines describing the modules in blueprints/library.lua, for /aimod-modules.
+local function counts(map, format)
+  local parts = {};
+  for name, count in pairs(map) do
+    parts[#parts + 1] = string.format(format, name, count);
+  end
+  table.sort(parts);
+  return table.concat(parts, ", ");
+end
+
+-- Lines describing the modules in blueprints/library.lua, for /aimod-modules:
+-- what each makes and costs, its upkeep and score (ModuleLibrary.report),
+-- and its warnings.
 function AIMod.module_list()
   local lines = {};
   for i, module in ipairs(ModuleLibrary.listed()) do
-    local made, seen = {}, {};
-    for j, output in ipairs(module.outputs) do
-      if(not seen[output.type]) then
-        seen[output.type] = true;
-        made[#made + 1] = output.type;
-      end
+    local report = ModuleLibrary.report(module);
+    lines[#lines + 1] = string.format("%s%s: %s from %s; %d buildings costing %s; %.1f coal/min into %d; full in %s; score %.3f",
+      module.name, module.off and " (off)" or "", counts(report.rates, "%s %.1f/min"), module.resource,
+      #module.buildings, counts(report.cost, "%s %g"), report.coal, report.refuel,
+      report.buffer < math.huge and string.format("%.0f min", report.buffer) or "never", report.score);
+    for j, warning in ipairs(report.warnings) do
+      lines[#lines + 1] = "  " .. warning;
     end
-    lines[#lines + 1] = string.format("%s%s: %s from %s, %d buildings", module.name, module.off and " (off)" or "",
-      table.concat(made, ", "), module.resource, #module.buildings);
   end
   return lines;
 end
@@ -185,6 +195,8 @@ function AIMod.use_modules(parameter)
   end
   if(#names == 1 and names[1] == "default") then
     ModuleLibrary.choose(nil);
+  elseif(#names == 1 and names[1] == "best") then
+    ModuleLibrary.choose("best");
   elseif(#names > 0) then
     local unknown = ModuleLibrary.choose(names);
     if(unknown) then
@@ -196,10 +208,11 @@ function AIMod.use_modules(parameter)
     using[#using + 1] = module.name;
   end
   return "AIMod builds, best first: " .. table.concat(using, ", ") ..
-    (storage.module_choice and " (your choice; /aimod-use default goes back to the library)" or " (blueprints/library.lua)");
+    (storage.module_choice == "best" and " (best score first; /aimod-use default goes back to the library)" or
+     storage.module_choice and " (your choice; /aimod-use default goes back to the library)" or " (blueprints/library.lua)");
 end
 
-commands.add_command("aimod-use", "[module ...] - which modules the AIMod bot builds, best first; default: as in blueprints/library.lua.", function(command)
+commands.add_command("aimod-use", "[module ... | best | default] - which modules the AIMod bot builds, best first; best: by score; default: as in blueprints/library.lua.", function(command)
   local message = AIMod.use_modules(command.parameter);
   local player = command.player_index and game.get_player(command.player_index);
   if(player) then player.print(message) else log(message) end

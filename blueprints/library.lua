@@ -31,6 +31,15 @@ local BLUEPRINTS = {
   -- DDFF<c a burner drill, a stone furnace and a burner inserter emptying it
   -- D>FF   into a wooden chest
   ["furnace-chest"] = "0eNpt0N1qwzAMBeBXMbp2yuLaHfFlX2OMkR+tEzhysZ2tJeTdR5yWdU0ujcV3jjRC4wY8B+IEdgRXN+jAwnEIjEF0gZyTIibPKD6HwHWLUhBHDAmDIE5e1OLH+w5ZtF8YE0ighD3YB1cCtZ4j2LcRIp24dnMU1z2ChWwXNxsmCcQdXsCWk9yYXqKKJepvWE3vEpATJcIlJz+uHzz0DQawpbwLTd6s6ImJT0VeECScfaREnueoSx6/5grQUcB2+dFzoydXye09VuL+Jm4Y++du9/uuFb0z2XnZmf/dSrUBa7l5tpVqHtT5kN8YYv41B1UZrXRVHUr9qqbpF0Knusc=",
+  -- DDFFDD two burner drills facing one stone furnace: a brick takes 2 stone,
+  -- D>FF<D so one drill keeps the furnace busy only 40% of the time
+  ["pair-furnace"] = "0eNqVkEFqwzAQRa8iZi0vrNgp1jm6KyXI9sQMyKMgyU2C0d2DlISU1hS6GRjm672PVujtgidPHEGvYE2PFjS8n53oF8/oxejJ2iCOZiCehGMUIeZ5XDybAUECRZxBfwNJoMFxAP2xQqCJjc1sNjPmWMFWMzHxVBU6JAnEI15A10luvCnG6ml8pVX6lIAcKRLedWW5HniZe/Sga/mXVsLJBYrkOLsuJX4tHWAkj8P90uRKP7hKblf7Rdw9iBuM3f+6tVvd6vIDX+hDWdu96tpGNV23r5s3ldINJKqhrg==",
+  -- DDDDDDDDDD        five burner drills onto a belt, four burner inserters
+  -- DvDvDvDvDv        into four stone furnaces: 5 drills feed 4 furnaces
+  --  >>>>>>>>>>>>>>>>  exactly (1.25 ore/s)
+  --            i i i i
+  --            FFFFFFFF
+  ["belt-line"] = "0eNqV1tFugjAUBuBXac51NWtpQXiAvcRiFtCzpQkW0xajMbz7As5MN6bnXEKb72+hf+AMTdvjPjifoDpDWzfYQgWv7oCi6YPHILbBtW0UnU+dqEWDbZLio+uDcD5iSBiicOPYdC+mzqP46IOvNxhBgku4g+omRYLbdD5C9XaG6D593Y7Bvt4hVJBC7eO+C2kx5sAgwfktHqFSg5yZPqUtvtNuZuthLQF9csnhJWm6OL37ftdggErJK3HZ5GLnvPOfi2mvIGHfRZdc58es4zT9NK0Bti7g5jKyGpf0y9U8N6O6Gc+1VNfw3ILqWp5bUt1c/nNS/r6y5eUh6KW9Z80MW5BZzWFXZDbjsCWZNRxWvZBdy3IV2c1Zria7BcvNyO6K5RqyW7JcSy/FCwtmtI1VN0Xvm2IVTtEbp1iVU/TOKVbpNL10itU6TW+dYtVO//nGXf8DHpy3bGmHOStjWPqJZRiWeWJZhpU/sX5adP+7MlOiyZlXCrKSPVBWZMU+UEqyUlyVtYQDhjgN2VyX1mhTlrkyhR6GL0ngeso=",
 };
 
 return {
@@ -38,11 +47,14 @@ return {
   modules = {
     {name="BurnerToFurnace", blueprint="burner-furnace", resource="iron-ore", product="iron-plate"},
     {name="BurnerToFurnaceCopper", blueprint="burner-furnace", resource="copper-ore", product="copper-plate"},
+    {name="StonePairFurnace", blueprint="pair-furnace", resource="stone", product="stone-brick", off=true},
     {name="BurnerToFurnaceStone", blueprint="burner-furnace", resource="stone", product="stone-brick"},
     {name="BurnerToBurner", blueprint="coal-pair", resource="coal", product="coal"},
-    -- not built yet: the bot would have to fuel the inserter too, and a
-    -- chest of stone or coal is no goal of its own
+    -- off: with burners, inserters and belts cost more and add buildings to
+    -- fuel for the same plates (/aimod-modules shows each one's score), and
+    -- a chest of stone is no goal of its own; /aimod-use can switch them on
     {name="IronToChest", blueprint="furnace-chest", resource="iron-ore", product="iron-plate", off=true},
+    {name="IronBeltLine", blueprint="belt-line", resource="iron-ore", product="iron-plate", off=true},
     {name="StoneToChest", blueprint="burner-chest", resource="stone", product="stone", off=true},
   },
 };

@@ -163,8 +163,8 @@ T.describe("Console commands", function()
 
   T.it("/aimod-modules lists the library", function()
     local lines = AIMod.module_list()
-    T.eq(#lines, #ModuleLibrary.listed(), "a line each")
-    T.eq(lines[1], "BurnerToFurnace: iron-plate from iron-ore, 2 buildings", "first")
+    T.truthy(#lines >= #ModuleLibrary.listed(), "a line each, and warnings")
+    T.truthy(lines[1]:find("^BurnerToFurnace: iron%-plate 15%.0/min from iron%-ore; 2 buildings costing iron%-plate 9, stone 10; 3%.6 coal/min into 2; full in 7 min; score "), lines[1])
     T.truthy(lines[#lines]:find("%(off%)"), lines[#lines])
   end)
 
@@ -202,5 +202,191 @@ T.describe("Choosing the modules", function()
     T.truthy(AIMod.use_modules(""):find("IronToChest, BurnerToBurner"), "shown")
     T.truthy(AIMod.use_modules("default"):find("^AIMod builds, best first: BurnerToFurnace"), "reset")
     T.truthy(AIMod.use_modules("Nope"):find("no module Nope"), "unknown")
+  end)
+end)
+
+-- A blueprint string of `entities`, numbered in order.
+local function blueprint_of(entities)
+  for i, entity in ipairs(entities) do entity.entity_number = i end
+  return encode{ item = "blueprint", entities = entities }
+end
+local function drill(x, y, direction) return { name = "burner-mining-drill", position = { x = x, y = y }, direction = direction } end
+local function belt(x, y, direction) return { name = "transport-belt", position = { x = x + 0.5, y = y + 0.5 }, direction = direction } end
+local function inserter(x, y, direction) return { name = "burner-inserter", position = { x = x + 0.5, y = y + 0.5 }, direction = direction } end
+local function chest(x, y) return { name = "wooden-chest", position = { x = x + 0.5, y = y + 0.5 } } end
+local function check(entities, resource)
+  return Blueprint.module{ name = "test", blueprint = blueprint_of(entities), resource = resource or "iron-ore" }
+end
+local E, S, W = defines.direction.east, defines.direction.south, defines.direction.west
+
+T.describe("Belts in blueprints", function()
+  T.it("a belt line feeds four furnaces through inserters", function()
+    local module, problem, checks = module_of("belt-line", "iron-ore", "iron-plate")
+    T.same(checks.errors, {}, "errors")
+    T.same(checks.warnings, {}, "warnings")
+    local fed = {}
+    for _, output in ipairs(module.outputs) do fed[#fed + 1] = module.buildings[output.building].type .. ":" .. output.type end
+    T.same(fed, { "stone-furnace:iron-plate", "stone-furnace:iron-plate", "stone-furnace:iron-plate", "stone-furnace:iron-plate" }, "outputs")
+    T.eq(#module.inputs, 13, "the bot fuels 5 drills, 4 inserters, 4 furnaces")
+    local line = BaseModule:new(module)
+    T.near(line:productionRate("iron-plate") * 60, 75, 1e-6, "per minute")
+    T.near(line:smeltingLoad(), 1, 1e-6, "5 drills feed 4 furnaces exactly")
+  end)
+
+  T.it("follows an underground belt and a splitter", function()
+    -- drill drops at (1, 2); belt east, underground in at 2, out at 5, splitter at 6/7, two inserters, two chests
+    local _, _, checks = check{
+      drill(1, 1, S), belt(1, 2, E),
+      { name = "underground-belt", position = { x = 2.5, y = 2.5 }, direction = E, type = "input" },
+      { name = "underground-belt", position = { x = 5.5, y = 2.5 }, direction = E, type = "output" },
+      { name = "splitter", position = { x = 6.5, y = 3 }, direction = E },
+      belt(7, 2, E), belt(7, 3, E),
+      inserter(8, 2, W), inserter(8, 3, W), chest(9, 2), chest(9, 3),
+    }
+    T.same(checks.errors, {}, "errors")
+    local module = check{
+      drill(1, 1, S), belt(1, 2, E),
+      { name = "underground-belt", position = { x = 2.5, y = 2.5 }, direction = E, type = "input" },
+      { name = "underground-belt", position = { x = 5.5, y = 2.5 }, direction = E, type = "output" },
+      { name = "splitter", position = { x = 6.5, y = 3 }, direction = E },
+      belt(7, 2, E), belt(7, 3, E),
+      inserter(8, 2, W), inserter(8, 3, W), chest(9, 2), chest(9, 3),
+    }
+    local chests = 0
+    for _, output in ipairs(module.outputs) do
+      if module.buildings[output.building].type == "wooden-chest" and output.type == "iron-ore" then chests = chests + 1 end
+    end
+    T.eq(chests, 2, "ore reaches both chests")
+  end)
+
+  T.it("coal carried by a burner inserter fuels it", function()
+    local module = check({ drill(1, 1, S), belt(1, 2, E), inserter(2, 2, W), chest(3, 2) }, "coal")
+    T.same(module.inputs, {
+      { building = 1, type = "coal", slot = "fuel", ongoing = true },
+      { building = 3, type = "coal", slot = "fuel", ongoing = false },
+    }, "the bot fuels the drill; the inserter only to start")
+  end)
+end)
+
+T.describe("Blueprint checks", function()
+  T.it("a drill dropping on the ground is an error", function()
+    local _, _, checks = check{ drill(1, 1, E) }
+    T.truthy(checks.errors[1]:find("drops its iron%-ore on the ground"), checks.errors[1])
+  end)
+
+  T.it("an inserter with nothing on either side is an error", function()
+    local _, _, checks = check{ drill(1, 1, E), chest(2, 0), inserter(5, 5, W) }
+    T.truthy(checks.errors[1]:find("has nothing to take from"), checks.errors[1])
+  end)
+
+  T.it("nothing the bot can take is an error", function()
+    local _, _, checks = check{ drill(1, 1, S), belt(1, 2, E) }
+    T.truthy(table.concat(checks.errors, "; "):find("nothing ends where the bot can take it"), table.concat(checks.errors, "; "))
+  end)
+
+  T.it("a belt nobody takes from, and one carrying nothing, are warnings", function()
+    local _, _, checks = check{ drill(1, 1, E), chest(2, 0), drill(5, 1, S), belt(5, 2, E), belt(9, 9, E) }
+    local text = table.concat(checks.warnings, "; ")
+    T.truthy(text:find("transport%-belt 4 ends with iron%-ore that no inserter takes"), text)
+    T.truthy(text:find("transport%-belt 5 carries nothing"), text)
+  end)
+
+  T.it("too many drills for a furnace is a warning in the report", function()
+    -- two drills facing one furnace from both sides
+    local data = check{ drill(1, 1, E), { name = "stone-furnace", position = { x = 3, y = 1 } }, drill(5, 1, W) }
+    data.name = "TwoDrillsOneFurnace"
+    local report = ModuleLibrary.report(BaseModule:new(data))
+    T.near(report.load, 1.6, 1e-6, "0.5 ore a second for 0.3125")
+    T.truthy(table.concat(report.warnings, "; "):find("the drills mine 60%% more"), table.concat(report.warnings, "; "))
+  end)
+
+  T.it("a library entry with errors is left out", function()
+    for _, module in ipairs(ModuleLibrary.listed()) do
+      T.same(ModuleLibrary.checks(module.name).errors, {}, module.name)
+    end
+  end)
+end)
+
+T.describe("Choosing by score", function()
+  T.it("costs and upkeep tell the plain module from the bigger ones", function()
+    local plain = ModuleLibrary.report(BurnerToFurnaceModule)
+    local chest = ModuleLibrary.report(ModuleLibrary.get("IronToChest"))
+    local line = ModuleLibrary.report(ModuleLibrary.get("IronBeltLine"))
+    T.same({ plain.refuel, chest.refuel, line.refuel }, { 2, 3, 13 }, "buildings to fuel")
+    T.truthy(plain.score > chest.score and plain.score > line.score, string.format("%.3f %.3f %.3f", plain.score, chest.score, line.score))
+    T.truthy(chest.buffer > plain.buffer, "the chest holds more")
+  end)
+
+  T.it("best puts the highest score first", function()
+    ModuleLibrary.choose("best")
+    local all = ModuleLibrary.all()
+    for i = 2, #all do
+      T.truthy(ModuleLibrary.report(all[i - 1]).score >= ModuleLibrary.report(all[i]).score, all[i - 1].name .. " before " .. all[i].name)
+    end
+    T.eq(ModuleLibrary.producer(Fakes.player{}, "iron-plate"), BurnerToFurnaceModule, "iron: the plain module")
+    T.truthy(AIMod.use_modules(""):find("best score first"), "said so")
+    ModuleLibrary.choose(nil)
+  end)
+
+  T.it("crafts belts two to a craft", function()
+    Lab.reset()
+    storage.resource_managers[1] = ResourceManager:new()
+    Lab.patch("iron-ore", 0, 0, 9, 1)
+    local player = Fakes.player{ surface = Lab.surface(), items = { ["burner-mining-drill"] = 5, ["stone-furnace"] = 4, ["burner-inserter"] = 4 } }
+    local machine = GoalMachine:new()
+    local task = BuildModuleTask:new{ module = ModuleLibrary.get("IronBeltLine") }
+    machine:pushSingle(task)
+    task:tick{ player = player, machine = machine }
+    local craft = Fakes.goals(machine)[1]
+    T.same({ craft.recipe, craft.qty }, { "transport-belt", 8 }, "8 crafts for 16 belts")
+  end)
+end)
+
+T.describe("The first module for a product", function()
+  T.before_each(function()
+    Lab.reset()
+    storage.resource_managers[1] = ResourceManager:new()
+  end)
+
+  T.it("is one the bot can build from what it carries", function()
+    ModuleLibrary.choose{ "IronBeltLine", "BurnerToFurnace" }
+    local start = Fakes.player{ surface = Lab.surface(), items = { ["burner-mining-drill"] = 1, ["stone-furnace"] = 1, ["iron-plate"] = 8 } }
+    T.eq(ModuleLibrary.missingOwn(start, ModuleLibrary.get("IronBeltLine"), "iron-plate"), 64, "the line lacks 64 plates")
+    T.eq(ModuleLibrary.missingOwn(start, BurnerToFurnaceModule, "iron-plate"), 0, "the starting kit is the plain module")
+    T.eq(ModuleLibrary.producer(start, "iron-plate"), BurnerToFurnaceModule, "plain first")
+    -- once a module makes iron plates, the list order counts again
+    Lab.patch("iron-ore", 0, 0, 1, 1)
+    local module = BurnerToFurnaceModule:instantiate()
+    module.buildings[1].entity = Lab.entity("burner-mining-drill", { 1, 1 })
+    module.buildings[2].entity = Lab.entity("stone-furnace", { 3, 1 })
+    storage.resource_managers[1]:register_source(ModuleResourceSource:new{ module = module })
+    T.eq(ModuleLibrary.producer(start, "iron-plate"), ModuleLibrary.get("IronBeltLine"), "then the belt line")
+    ModuleLibrary.choose(nil)
+  end)
+end)
+
+T.describe("Choosing by need", function()
+  T.before_each(function()
+    Lab.reset()
+    storage.resource_managers[1] = ResourceManager:new()
+  end)
+
+  T.it("best takes the cheapest module that covers a goal, the best score for growth", function()
+    ModuleLibrary.choose("best")
+    local player = Fakes.player{ surface = Lab.surface() }
+    local pair, single = ModuleLibrary.get("StonePairFurnace"), BurnerToFurnaceStoneModule
+    T.eq(ModuleLibrary.producer(player, "stone-brick"), pair, "no goal: the best score")
+    T.eq(ModuleLibrary.producer(player, "stone-brick", nil, 5), single, "5 a minute: one drill does")
+    T.eq(ModuleLibrary.producer(player, "stone-brick", nil, 15), pair, "15 a minute: two drills")
+    T.eq(ModuleLibrary.producer(player, "stone-brick", nil, 40), pair, "more than any one makes: the best score")
+    local goal = ProductionGoalTask:new{ item = "stone-brick", per_minute = 5 }
+    T.eq(goal:shortfall(player), 5, "a goal says what it lacks")
+    T.eq(ProductionGoalTask:new{ item = "stone-brick", per_minute = 5, growth = true }:shortfall(player), nil, "growth doesn't")
+    ModuleLibrary.choose(nil)
+  end)
+
+  T.it("the list order stands without best", function()
+    local player = Fakes.player{ surface = Lab.surface() }
+    T.eq(ModuleLibrary.producer(player, "stone-brick", nil, 15), BurnerToFurnaceStoneModule, "the switched-on one")
   end)
 end)

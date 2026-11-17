@@ -1,0 +1,275 @@
+{
+ "blueprint": {
+  "label": "Five burner drills onto a belt, four inserters into four stone furnaces",
+  "item": "blueprint",
+  "icons": [
+   {
+    "signal": {
+     "name": "transport-belt"
+    },
+    "index": 1
+   },
+   {
+    "signal": {
+     "name": "stone-furnace"
+    },
+    "index": 2
+   }
+  ],
+  "entities": [
+   {
+    "entity_number": 1,
+    "name": "burner-mining-drill",
+    "position": {
+     "x": 1,
+     "y": 1
+    },
+    "direction": 8
+   },
+   {
+    "entity_number": 2,
+    "name": "burner-mining-drill",
+    "position": {
+     "x": 3,
+     "y": 1
+    },
+    "direction": 8
+   },
+   {
+    "entity_number": 3,
+    "name": "burner-mining-drill",
+    "position": {
+     "x": 5,
+     "y": 1
+    },
+    "direction": 8
+   },
+   {
+    "entity_number": 4,
+    "name": "burner-mining-drill",
+    "position": {
+     "x": 7,
+     "y": 1
+    },
+    "direction": 8
+   },
+   {
+    "entity_number": 5,
+    "name": "burner-mining-drill",
+    "position": {
+     "x": 9,
+     "y": 1
+    },
+    "direction": 8
+   },
+   {
+    "entity_number": 6,
+    "name": "transport-belt",
+    "position": {
+     "x": 1.5,
+     "y": 2.5
+    },
+    "direction": 4
+   },
+   {
+    "entity_number": 7,
+    "name": "transport-belt",
+    "position": {
+     "x": 2.5,
+     "y": 2.5
+    },
+    "direction": 4
+   },
+   {
+    "entity_number": 8,
+    "name": "transport-belt",
+    "position": {
+     "x": 3.5,
+     "y": 2.5
+    },
+    "direction": 4
+   },
+   {
+    "entity_number": 9,
+    "name": "transport-belt",
+    "position": {
+     "x": 4.5,
+     "y": 2.5
+    },
+    "direction": 4
+   },
+   {
+    "entity_number": 10,
+    "name": "transport-belt",
+    "position": {
+     "x": 5.5,
+     "y": 2.5
+    },
+    "direction": 4
+   },
+   {
+    "entity_number": 11,
+    "name": "transport-belt",
+    "position": {
+     "x": 6.5,
+     "y": 2.5
+    },
+    "direction": 4
+   },
+   {
+    "entity_number": 12,
+    "name": "transport-belt",
+    "position": {
+     "x": 7.5,
+     "y": 2.5
+    },
+    "direction": 4
+   },
+   {
+    "entity_number": 13,
+    "name": "transport-belt",
+    "position": {
+     "x": 8.5,
+     "y": 2.5
+    },
+    "direction": 4
+   },
+   {
+    "entity_number": 14,
+    "name": "transport-belt",
+    "position": {
+     "x": 9.5,
+     "y": 2.5
+    },
+    "direction": 4
+   },
+   {
+    "entity_number": 15,
+    "name": "transport-belt",
+    "position": {
+     "x": 10.5,
+     "y": 2.5
+    },
+    "direction": 4
+   },
+   {
+    "entity_number": 16,
+    "name": "transport-belt",
+    "position": {
+     "x": 11.5,
+     "y": 2.5
+    },
+    "direction": 4
+   },
+   {
+    "entity_number": 17,
+    "name": "transport-belt",
+    "position": {
+     "x": 12.5,
+     "y": 2.5
+    },
+    "direction": 4
+   },
+   {
+    "entity_number": 18,
+    "name": "transport-belt",
+    "position": {
+     "x": 13.5,
+     "y": 2.5
+    },
+    "direction": 4
+   },
+   {
+    "entity_number": 19,
+    "name": "transport-belt",
+    "position": {
+     "x": 14.5,
+     "y": 2.5
+    },
+    "direction": 4
+   },
+   {
+    "entity_number": 20,
+    "name": "transport-belt",
+    "position": {
+     "x": 15.5,
+     "y": 2.5
+    },
+    "direction": 4
+   },
+   {
+    "entity_number": 21,
+    "name": "transport-belt",
+    "position": {
+     "x": 16.5,
+     "y": 2.5
+    },
+    "direction": 4
+   },
+   {
+    "entity_number": 22,
+    "name": "burner-inserter",
+    "position": {
+     "x": 10.5,
+     "y": 3.5
+    }
+   },
+   {
+    "entity_number": 23,
+    "name": "burner-inserter",
+    "position": {
+     "x": 12.5,
+     "y": 3.5
+    }
+   },
+   {
+    "entity_number": 24,
+    "name": "burner-inserter",
+    "position": {
+     "x": 14.5,
+     "y": 3.5
+    }
+   },
+   {
+    "entity_number": 25,
+    "name": "burner-inserter",
+    "position": {
+     "x": 16.5,
+     "y": 3.5
+    }
+   },
+   {
+    "entity_number": 26,
+    "name": "stone-furnace",
+    "position": {
+     "x": 11,
+     "y": 5
+    }
+   },
+   {
+    "entity_number": 27,
+    "name": "stone-furnace",
+    "position": {
+     "x": 13,
+     "y": 5
+    }
+   },
+   {
+    "entity_number": 28,
+    "name": "stone-furnace",
+    "position": {
+     "x": 15,
+     "y": 5
+    }
+   },
+   {
+    "entity_number": 29,
+    "name": "stone-furnace",
+    "position": {
+     "x": 17,
+     "y": 5
+    }
+   }
+  ]
+ }
+}

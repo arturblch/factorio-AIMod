@@ -9,21 +9,30 @@
   helpers.json_to_table read it (both work while control.lua loads).
 
   What the module data needs and the blueprint doesn't say is worked out
-  from prototypes:
-   - geometry: every tile the buildings cover, and the mining area of each
-     drill, which has to be `resource` (nothing else, see 1.6);
-   - who hands what to whom: a drill drops into whatever is at its drop
-     position, an inserter moves from its pickup to its drop position;
-   - outputs, where the bot takes the product: a furnace's result slot (or
-     the chest an inserter empties it into), a chest a drill fills, or the
-     fuel slots of drills that feed each other coal (keeping a few);
-   - inputs: every burner the bot keeps fueled; of drills that fuel each
-     other, only the first gets fuel to start with.
+  from prototypes, by following the items:
+   - a drill mines `resource` from its mining area (those tiles must be
+     that ore, and only that, see 1.6) and drops it on whatever is at its
+     drop position: a building, a belt, or the ground;
+   - a belt carries what is on it to the belt in front (straight on or
+     from the side), an underground belt to its exit, a splitter to both
+     belts in front of it; a belt hands nothing to a building by itself;
+   - an inserter takes from its pickup position (a belt, a furnace's
+     result, a chest) and puts into its drop position; a burner inserter
+     carrying fuel fuels itself from it;
+   - a furnace smelts what it gets (fuel goes to its fuel slot);
+   - outputs, where the bot takes the product: a furnace result no inserter
+     takes away, a chest that gets something, or the fuel slots of drills
+     fed coal by the module (keeping a few);
+   - inputs: every burner the bot keeps fueled, i.e. that gets no fuel
+     from the module; of those that do, the first gets fuel to start with.
+  It also checks the layout (Blueprint.module's third result): errors make
+  a blueprint useless as a module, warnings point at a weak layout.
 ]]
 Blueprint = {};
 
 local FUEL = "coal";
 local KEEP_FUEL = 5; -- what fuel outputs leave in a drill fed by another
+local BELTS = {["transport-belt"] = true, ["underground-belt"] = true, ["splitter"] = true};
 
 -- The blueprint table inside `text`, or nil and why not.
 function Blueprint.decode(text)
@@ -108,13 +117,21 @@ local function is_fuel(item)
   return prototype ~= nil and prototype.fuel_value > 0;
 end
 
+local function names(set)
+  local list = {};
+  for name in pairs(set) do list[#list + 1] = name; end
+  table.sort(list);
+  return table.concat(list, ", ");
+end
+
 --[[
   Module data from `spec`:
    - name: string; the module's name
    - blueprint: string; a blueprint string
    - resource: string; what the drills mine (iron-ore, coal, stone, ...)
    - product: string; (optional) checked to be among the outputs
-  Returns the data for BaseModule:new, or nil and why not.
+  Returns the data for BaseModule:new and the checks {errors=, warnings=,
+  flows=} (lists of strings), or nil and why not.
 ]]
 function Blueprint.module(spec)
   local blueprint, problem = Blueprint.decode(spec.blueprint);
@@ -129,6 +146,10 @@ function Blueprint.module(spec)
   if(#entities == 0) then
     return nil, "the blueprint has no entities";
   end
+  local ore = mined_item(spec.resource);
+  if(not ore) then
+    return nil, "nothing to mine in " .. tostring(spec.resource);
+  end
 
   -- where everything is, before moving the top left tile to 0, 0
   local parts = {};
@@ -138,9 +159,10 @@ function Blueprint.module(spec)
     if(not prototype) then
       return nil, "unknown entity " .. entity.name;
     end
-    local part = {prototype=prototype, position=entity.position, direction=entity.direction or defines.direction.north};
+    local part = {prototype=prototype, kind=prototype.type, position=entity.position,
+                  direction=entity.direction or defines.direction.north, belt_end=entity.type};
     part.tiles = Blueprint.footprint(prototype, part.position, part.direction);
-    if(prototype.type == "mining-drill") then
+    if(part.kind == "mining-drill") then
       part.mines = mining_area(prototype, part.position);
     end
     for j, area in ipairs({part.tiles, part.mines}) do
@@ -178,6 +200,9 @@ function Blueprint.module(spec)
     if(part.direction ~= defines.direction.north) then
       building.direction = part.direction;
     end
+    if(part.belt_end) then
+      building.belt_end = part.belt_end; -- underground belt: "input" or "output"
+    end
     buildings[i] = building;
   end
   local function at(position)
@@ -187,57 +212,173 @@ function Blueprint.module(spec)
     local v = rotate(vector, part.direction);
     return {x=part.position.x + v.x, y=part.position.y + v.y};
   end
-
-  -- who hands what to whom
-  local ore = mined_item(spec.resource);
-  if(not ore) then
-    return nil, "nothing to mine in " .. tostring(spec.resource);
+  local function label(i)
+    return parts[i].prototype.name .. " " .. i;
   end
-  local receives = {}; -- index -> {item = true} delivered by the module itself
-  local made = {};     -- index -> item the building makes (furnaces)
-  local moved = {};    -- index of a building an inserter empties -> index of where it goes
+
+  local errors, warnings, flows = {}, {}, {};
+
+  -- belts: where each one hands its items on
   for i, part in ipairs(parts) do
-    if(part.mines) then
+    if(BELTS[part.kind]) then
+      local ahead = rotate({0, -1}, part.direction);
+      part.next = {};
+      local function onto(position)
+        local j = at(position);
+        if(j and j ~= i and BELTS[parts[j].kind]) then
+          part.next[#part.next + 1] = j;
+        end
+      end
+      if(part.kind == "underground-belt" and part.belt_end == "input") then
+        for d = 1, (part.prototype.max_underground_distance or 5) + 1 do
+          local j = at({x=part.position.x + ahead.x * d, y=part.position.y + ahead.y * d});
+          if(j and parts[j].kind == "underground-belt" and parts[j].belt_end == "output" and parts[j].direction == part.direction) then
+            part.next[#part.next + 1] = j;
+            break;
+          end
+        end
+      elseif(part.kind == "splitter") then
+        local side = rotate({1, 0}, part.direction);
+        for s = -0.5, 0.5, 1 do
+          onto({x=part.position.x + side.x * s + ahead.x, y=part.position.y + side.y * s + ahead.y});
+        end
+      else
+        onto({x=part.position.x + ahead.x, y=part.position.y + ahead.y});
+      end
+    end
+  end
+
+  -- follow the items until nothing changes
+  local carries = {};  -- belt index -> {item = true}
+  local receives = {}; -- building index -> {item = true}
+  local taken_from = {}; -- building index -> true when an inserter takes from it
+  local function add(set_of, i, item)
+    set_of[i] = set_of[i] or {};
+    if(set_of[i][item]) then return false; end
+    set_of[i][item] = true;
+    return true;
+  end
+  -- what an inserter can take out of building i
+  local function available(i)
+    local part, result = parts[i], {};
+    if(BELTS[part.kind]) then
+      for item in pairs(carries[i] or {}) do result[item] = true; end
+    elseif(part.kind == "furnace") then
+      for item in pairs(receives[i] or {}) do
+        local product = smelted(part.prototype, item);
+        if(product) then result[product] = true; end
+      end
+    elseif(part.kind == "container") then
+      for item in pairs(receives[i] or {}) do result[item] = true; end
+    end
+    return result;
+  end
+  local function deliver(i, item)
+    if(BELTS[parts[i].kind]) then
+      return add(carries, i, item);
+    end
+    return add(receives, i, item);
+  end
+
+  for i, part in ipairs(parts) do
+    if(part.kind == "mining-drill") then
       local j = at(offset(part, part.prototype.vector_to_place_result));
-      if(j and j ~= i) then
-        receives[j] = receives[j] or {};
-        receives[j][ore] = true;
+      part.drops_into = j;
+      if(not j or j == i) then
+        errors[#errors + 1] = label(i) .. " drops its " .. ore .. " on the ground";
+      else
+        flows[#flows + 1] = label(i) .. " -> " .. label(j);
+      end
+    elseif(part.kind == "inserter") then
+      part.from = at(offset(part, part.prototype.inserter_pickup_position));
+      part.to = at(offset(part, part.prototype.inserter_drop_position));
+      if(not part.from or part.from == i) then
+        errors[#errors + 1] = label(i) .. " has nothing to take from";
+      elseif(not part.to or part.to == i) then
+        errors[#errors + 1] = label(i) .. " has nowhere to put things";
+      else
+        taken_from[part.from] = true;
+        flows[#flows + 1] = label(i) .. ": " .. label(part.from) .. " -> " .. label(part.to);
       end
     end
   end
-  for j, items in pairs(receives) do
-    if(parts[j].prototype.type == "furnace") then
-      for item in pairs(items) do
-        made[j] = made[j] or smelted(parts[j].prototype, item);
-      end
-    end
-  end
-  for i, part in ipairs(parts) do
-    if(part.prototype.type == "inserter") then
-      local from = at(offset(part, part.prototype.inserter_pickup_position));
-      local to = at(offset(part, part.prototype.inserter_drop_position));
-      if(from and to and from ~= to) then
-        moved[from] = to;
+  local changed, rounds = true, 0;
+  while(changed and rounds < 100) do
+    changed, rounds = false, rounds + 1;
+    for i, part in ipairs(parts) do
+      if(part.kind == "mining-drill" and part.drops_into and part.drops_into ~= i) then
+        changed = deliver(part.drops_into, ore) or changed;
+      elseif(part.kind == "inserter" and part.from and part.to and part.from ~= part.to) then
+        for item in pairs(available(part.from)) do
+          changed = deliver(part.to, item) or changed;
+          if(is_fuel(item)) then
+            changed = add(receives, i, item) or changed; -- a burner inserter fuels itself from what it carries
+          end
+        end
+      elseif(part.next) then
+        for item in pairs(carries[i] or {}) do
+          for k, j in ipairs(part.next) do
+            changed = add(carries, j, item) or changed;
+          end
+        end
       end
     end
   end
 
+  -- outputs: where the bot takes the product
   local outputs, fed = {}, {};
   for i, part in ipairs(parts) do
-    local p = part.prototype;
     local items = receives[i] or {};
-    if(made[i]) then
-      outputs[#outputs + 1] = {building=moved[i] or i, type=made[i], slot="output"};
-    elseif(p.type == "container") then
+    if(part.kind == "furnace") then
+      local made = {};
+      for item in pairs(items) do
+        local product = smelted(part.prototype, item);
+        if(product) then made[product] = true; end
+      end
+      if(not next(made)) then
+        warnings[#warnings + 1] = label(i) .. " gets nothing to smelt";
+      elseif(not taken_from[i]) then
+        for product in pairs(made) do
+          outputs[#outputs + 1] = {building=i, type=product, slot="output"};
+        end
+      end
+    elseif(part.kind == "container") then
       for item in pairs(items) do
         outputs[#outputs + 1] = {building=i, type=item, slot="output"};
       end
-    elseif(p.burner_prototype and items[FUEL] and is_fuel(FUEL)) then
-      fed[i] = true;
+    elseif(part.kind == "mining-drill" and part.prototype.burner_prototype and items[FUEL]) then
       outputs[#outputs + 1] = {building=i, type=FUEL, slot="fuel", keep=KEEP_FUEL};
     end
+    if(part.prototype.burner_prototype and items[FUEL]) then
+      fed[i] = true;
+    end
   end
-  table.sort(outputs, function(a, b) return a.building < b.building; end);
+  table.sort(outputs, function(a, b)
+    if(a.building ~= b.building) then return a.building < b.building; end
+    return a.type < b.type;
+  end);
+
+  -- belts: carrying nothing, or ending with no one taking from them
+  for i, part in ipairs(parts) do
+    if(part.next) then
+      if(not carries[i]) then
+        warnings[#warnings + 1] = label(i) .. " carries nothing";
+      elseif(#part.next == 0) then
+        local someone = false;
+        -- an inserter anywhere along the way takes from this line?
+        for j, other in ipairs(parts) do
+          if(other.kind == "inserter" and other.from and parts[other.from].next and carries[other.from]) then
+            for item in pairs(carries[i]) do
+              someone = someone or carries[other.from][item];
+            end
+          end
+        end
+        if(not someone) then
+          warnings[#warnings + 1] = label(i) .. " ends with " .. names(carries[i]) .. " that no inserter takes";
+        end
+      end
+    end
+  end
 
   local inputs = {};
   local started = false;
@@ -262,17 +403,20 @@ function Blueprint.module(spec)
     return a.position.y < b.position.y;
   end);
 
+  if(#outputs == 0) then
+    errors[#errors + 1] = "nothing ends where the bot can take it (a furnace's result, a chest)";
+  end
   if(spec.product) then
     local found = false;
     for i, output in ipairs(outputs) do
       found = found or output.type == spec.product;
     end
     if(not found) then
-      return nil, "it makes no " .. spec.product;
+      return nil, "it makes no " .. spec.product, {errors=errors, warnings=warnings, flows=flows};
     end
   end
   return {name=spec.name, resource=spec.resource, geometry=tiles, buildings=buildings, inputs=inputs, outputs=outputs,
-          label=blueprint.label};
+          label=blueprint.label}, nil, {errors=errors, warnings=warnings, flows=flows};
 end
 
 return Blueprint;
