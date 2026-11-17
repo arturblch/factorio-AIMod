@@ -24,6 +24,7 @@ require 'tests/unit/hand_smelt_test'
 require 'tests/unit/production_score_test'
 require 'tests/unit/research_test'
 require 'tests/unit/growth_test'
+require 'tests/unit/blueprint_test'
 
 -- shared state every test starts without
 T.global_before[#T.global_before + 1] = function()
@@ -35,6 +36,7 @@ T.global_before[#T.global_before + 1] = function()
   storage.room_failed_at = nil
   storage.hand_furnaces = nil
   storage.goals_done = {}
+  storage.module_choice = nil
 end
 
 -- the bot must not play while the tests poke at the game

@@ -138,6 +138,80 @@ function AIMod.tick_bot(player, machine)
   end
 end
 
+-- Lines describing the modules in blueprints/library.lua, for /aimod-modules.
+function AIMod.module_list()
+  local lines = {};
+  for i, module in ipairs(ModuleLibrary.listed()) do
+    local made, seen = {}, {};
+    for j, output in ipairs(module.outputs) do
+      if(not seen[output.type]) then
+        seen[output.type] = true;
+        made[#made + 1] = output.type;
+      end
+    end
+    lines[#lines + 1] = string.format("%s%s: %s from %s, %d buildings", module.name, module.off and " (off)" or "",
+      table.concat(made, ", "), module.resource, #module.buildings);
+  end
+  return lines;
+end
+
+-- Draws where the bot would build module `name` for a minute; returns what
+-- to tell the player.
+function AIMod.show_plan(player, name)
+  local module = name and ModuleLibrary.get(name);
+  if(not module) then
+    return "AIMod: no module " .. tostring(name) .. ", /aimod-modules lists them";
+  end
+  local location = BuildModuleTask:new{module=module}:findLocation(player);
+  if(not location) then
+    return "AIMod: no spot for " .. name .. " near you";
+  end
+  ModulePlan.draw(module, location, player.surface, 3600);
+  return string.format("AIMod: %s would go at [gps=%d,%d]", name, location.x, location.y);
+end
+
+commands.add_command("aimod-modules", "Lists the modules the AIMod bot builds (blueprints/library.lua).", function(command)
+  local player = command.player_index and game.get_player(command.player_index);
+  for i, line in ipairs(AIMod.module_list()) do
+    if(player) then player.print(line) else log(line) end
+  end
+end)
+
+-- /aimod-use: which modules the bot builds; returns what to tell the player.
+function AIMod.use_modules(parameter)
+  local names = {};
+  for name in (parameter or ""):gmatch("[^%s,]+") do
+    names[#names + 1] = name;
+  end
+  if(#names == 1 and names[1] == "default") then
+    ModuleLibrary.choose(nil);
+  elseif(#names > 0) then
+    local unknown = ModuleLibrary.choose(names);
+    if(unknown) then
+      return "AIMod: no module " .. unknown .. ", /aimod-modules lists them";
+    end
+  end
+  local using = {};
+  for i, module in ipairs(ModuleLibrary.all()) do
+    using[#using + 1] = module.name;
+  end
+  return "AIMod builds, best first: " .. table.concat(using, ", ") ..
+    (storage.module_choice and " (your choice; /aimod-use default goes back to the library)" or " (blueprints/library.lua)");
+end
+
+commands.add_command("aimod-use", "[module ...] - which modules the AIMod bot builds, best first; default: as in blueprints/library.lua.", function(command)
+  local message = AIMod.use_modules(command.parameter);
+  local player = command.player_index and game.get_player(command.player_index);
+  if(player) then player.print(message) else log(message) end
+end)
+
+commands.add_command("aimod-plan", "<module> - shows for a minute where the AIMod bot would build that module.", function(command)
+  local player = command.player_index and game.get_player(command.player_index);
+  if(player and player.character) then
+    player.print(AIMod.show_plan(player, command.parameter and command.parameter:match("^%s*(%S+)")));
+  end
+end)
+
 script.on_init(AIMod.init_storage)
 script.on_configuration_changed(AIMod.init_storage)
 

@@ -4,12 +4,13 @@ require 'controllers/tasks/wait_for_output_task'
 require 'controllers/tasks/gatherResourcesTask'
 
 --[[
-  BaseModule: a small fixed layout of buildings (see burner_to_furnace.lua).
+  BaseModule: a small fixed layout of buildings, made from a blueprint
+  (blueprints/library.lua, util/blueprint.lua).
    - buildings[i].entity is set by PlaceBuildingTask once the building stands
    - inputs: {building=i, type="coal", slot="fuel"} - fuel the bot keeps topped up
    - outputs: {building=i, type="iron-plate", slot="output"|"fuel", keep=n}
-       slot "output" (default) is the building's result inventory; slot
-       "fuel" takes surplus fuel, leaving `keep` items behind
+       slot "output" (default) is the building's result inventory (a chest's
+       own inventory); slot "fuel" takes surplus fuel, leaving `keep` behind
 ]]
 BaseModule = {}
 
@@ -65,6 +66,9 @@ end
 local function output_inventory(entity, output)
   if(output.slot == "fuel") then
     return entity.get_fuel_inventory();
+  end
+  if(entity.type == "container") then
+    return entity.get_inventory(defines.inventory.chest);
   end
   return entity.get_output_inventory();
 end
@@ -187,13 +191,26 @@ function BaseModule:productionRate(product)
     inputs[#inputs + 1] = item;
   end
   table.sort(inputs);
-  local capacity, feed, fuel_output = 0, 0, false;
+  local fuel_output, smelted, raw = false, false, false;
   for i, output in ipairs(self.outputs) do
     if(output.type == product) then
       if(output.slot == "fuel") then
         fuel_output = true;
+      elseif(prototypes.entity[self.buildings[output.building].type].type == "container" and mined[product]) then
+        raw = true; -- a drill fills a chest
       else
-        local machine = prototypes.entity[self.buildings[output.building].type];
+        smelted = true; -- a furnace's result slot, or a chest an inserter fills from it
+      end
+    end
+  end
+  if(raw) then
+    return mined[product];
+  end
+  local capacity, feed = 0, 0;
+  if(smelted) then
+    for i, building in ipairs(self.buildings) do
+      local machine = prototypes.entity[building.type];
+      if(machine.type == "furnace" or machine.type == "assembling-machine") then
         local key = machine.name .. "|" .. product .. "|" .. table.concat(inputs, ",");
         local cached = recipe_cache[key];
         if(not cached) then
