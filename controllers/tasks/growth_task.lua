@@ -25,7 +25,9 @@ GrowthTask = Task:new()
 local log = Logger.makeLogger("GrowthTask");
 
 -- share of each product, per minute
-GrowthTask.MIX = {["iron-plate"] = 2, ["copper-plate"] = 1, ["stone-brick"] = 0.5};
+-- (no bricks: at the start of 2.1 nothing takes them, every recipe that
+-- does - wall, steel furnace, concrete - waits behind lab research)
+GrowthTask.MIX = {["iron-plate"] = 2, ["copper-plate"] = 1};
 GrowthTask.FUEL = "coal";
 local COAL_MARGIN = 1.25; -- coal made per coal burnt
 local LOW_FUEL = 5;       -- refuel below this many (a burner drill burns 2.25 coal a minute)

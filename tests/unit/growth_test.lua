@@ -52,14 +52,14 @@ T.describe("GrowthTask", function()
   T.it("then the product furthest behind its share", function()
     built(BurnerToFurnaceModule, "iron-ore", 0)
     built(BurnerToBurnerModule, "coal", 10)
-    T.eq(next_product(), "copper-plate", "copper 0 of 1 before bricks 0 of 0.5")
+    T.eq(next_product(), "copper-plate", "copper 0 of 1 before iron 15 of 2")
   end)
 
   T.it("skips what it gave up on", function()
     built(BurnerToFurnaceModule, "iron-ore", 0)
     built(BurnerToBurnerModule, "coal", 10)
     storage.failed_goals = { [1] = { "BurnerToFurnaceCopper" } }
-    T.eq(next_product(), "stone-brick", "bricks")
+    T.eq(next_product(), "iron-plate", "iron, no bricks")
   end)
 
   T.it("refuels a module first, both buildings in one trip", function()
