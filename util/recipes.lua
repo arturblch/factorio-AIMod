@@ -132,3 +132,24 @@ function Recipes.queued_count(player, item)
   end
   return count;
 end
+
+-- How `furnace` (an entity name) makes `item` out of a single item: {recipe=,
+-- ingredient=, amount=, made=} per craft (iron-plate: 1 iron-ore -> 1;
+-- stone-brick: 2 stone -> 1), or nil. Only recipes the force has unlocked.
+function Recipes.furnace_recipe(force, furnace, item)
+  local categories = prototypes.entity[furnace].crafting_categories or {};
+  for name, recipe in pairs(force.recipes) do
+    local ingredient = recipe.ingredients[1];
+    if(recipe.enabled and #recipe.ingredients == 1 and ingredient.type == "item") then
+      local made = Recipes.product_amount(recipe, item);
+      local fits = false;
+      for category in pairs(categories) do
+        fits = fits or recipe.has_category(category);
+      end
+      if(made > 0 and fits) then
+        return {recipe=name, ingredient=ingredient.name, amount=ingredient.amount, made=made};
+      end
+    end
+  end
+  return nil;
+end

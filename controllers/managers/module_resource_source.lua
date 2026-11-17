@@ -32,7 +32,7 @@ end
 -- up. GatherResourceTask repeats this until the inventory holds enough.
 function ModuleResourceSource:gather(opts)
   local wanted = opts.qty - Inventories.total_craftable_count(opts.player, opts.type);
-  local tasks = self.module:generateTasksForOutput(opts.type, wanted);
+  local tasks = self.module:generateTasksForOutput(opts.type, wanted, opts.qty);
   tasks[#tasks + 1] = CollectModuleOutputTask:new{module=self.module, type=opts.type, qty=opts.qty};
   opts.machine:pushStart(tasks);
 end

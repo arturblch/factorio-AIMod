@@ -290,11 +290,13 @@ function BaseModule:startTasks()
 end
 
 -- Tasks that end with at least `qty` of `product` waiting in the outputs
--- (or with the module out of fuel, so the caller can re-plan).
-function BaseModule:generateTasksForOutput(product, qty)
+-- (or with the module out of fuel, so the caller can re-plan). `total`
+-- (optional): what the caller wants in the inventory in the end, see
+-- WaitForOutputTask.
+function BaseModule:generateTasksForOutput(product, qty, total)
   local tasks = self:fuelTasks();
   if(self:outputCount(product) < qty) then
-    tasks[#tasks + 1] = WaitForOutputTask:new{module=self, type=product, qty=qty};
+    tasks[#tasks + 1] = WaitForOutputTask:new{module=self, type=product, qty=qty, total=total};
   end
   return tasks;
 end
