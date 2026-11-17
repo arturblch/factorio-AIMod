@@ -112,6 +112,21 @@ T.describe("MoveToPointTask", function()
     T.eq(player.walking_state.direction, defines.direction.north, "direction")
   end)
 
+  T.it("steps out of a gap when the pathfinder finds no route", function()
+    Lab.reset()
+    -- wedged between two buildings, open to the north and south
+    Lab.entity("burner-mining-drill", { -1, 1 })
+    Lab.entity("stone-furnace", { 1, 1 })
+    local player = Fakes.player{ surface = Lab.surface(), position = { x = 0, y = 1 } }
+    storage.path_results = { [7] = { path = nil } }
+    local task = walk_to(0.5, -20, { path_requested = true, request_id = 7 })
+    task:tick{ player = player, machine = GoalMachine:new() }
+    T.falsy(task.stuck, "gave up")
+    T.same(task.escape, { x = 0, y = -0.5 }, "steps north, towards the target")
+    task:tick{ player = player, machine = GoalMachine:new() }
+    T.eq(player.walking_state.direction, defines.direction.north, "walks there")
+  end)
+
   T.it("gives up and remembers the target the second time", function()
     local rock = { valid = true, name = "huge-rock", position = { x = 10, y = 0 } }
     local player = Fakes.player{ surface = Fakes.pathfinding_surface(7) }
@@ -147,10 +162,10 @@ T.describe("MoveToPointTask", function()
     T.falsy(task.stuck, "gave up")
   end)
 
-  T.it("gives up when there is no route", function()
+  T.it("gives up when there is no route from a step aside either", function()
     local rock = { valid = true, name = "huge-rock", position = { x = 10, y = 0 } }
     local player = Fakes.player()
-    local task = walk_to(10, 0, { entity = rock, path_requested = true, request_id = 7 })
+    local task = walk_to(10, 0, { entity = rock, path_requested = true, request_id = 7, escaped = true })
     storage.path_results = { [7] = { try_again_later = false } }
     task:tick{ player = player, machine = GoalMachine:new() }
     T.truthy(task.stuck, "gave up")

@@ -7,6 +7,11 @@ local accuracy = 1;
 local STUCK_TICKS = 180; -- 3 s without real progress means the way is blocked
 local STUCK_DISTANCE = 0.5;
 local LOST_TICKS = 600; -- 10 s of walking without getting closer: lost
+-- From a narrow gap between two buildings, where steering can wedge the
+-- character, the pathfinder finds no route at all. Then it steps this far to
+-- a free spot (at most ESCAPE_TICKS) and asks again from there, once.
+local ESCAPE_DISTANCE = 1.5;
+local ESCAPE_TICKS = 60;
 local num_projections = 6;
 local max_turn_rate = 10; -- degrees
 local collision_turn_rate = max_turn_rate * 2;
@@ -155,6 +160,8 @@ function MoveToPointTask:followPath(player)
       self.waypoint = 1;
     elseif(result.try_again_later) then
       self:requestPath(player);
+    elseif(not self.escaped and self:startEscape(player)) then
+      return true;
     else
       self:giveUp(player, "No route");
     end
@@ -175,6 +182,40 @@ function MoveToPointTask:followPath(player)
   end
   local direction = self:getDirection(self:getBearingToTarget(player, target));
   player.walking_state = {walking = true, direction = defines.direction[direction]};
+  return true;
+end
+
+-- A free spot ESCAPE_DISTANCE away in one of 8 directions, the one nearest
+-- the target first, or nil.
+function MoveToPointTask:escapeSpot(player)
+  local p = player.position;
+  local candidates = {};
+  for i, d in ipairs({{0, -1}, {1, 0}, {0, 1}, {-1, 0}, {0.7, -0.7}, {0.7, 0.7}, {-0.7, 0.7}, {-0.7, -0.7}}) do
+    local spot = {x=p.x + d[1] * ESCAPE_DISTANCE, y=p.y + d[2] * ESCAPE_DISTANCE};
+    candidates[#candidates + 1] = {spot=spot, distance=util.distance(spot, {x=self.x, y=self.y}), order=i};
+  end
+  table.sort(candidates, function(a, b)
+    if(a.distance ~= b.distance) then return a.distance < b.distance; end
+    return a.order < b.order;
+  end);
+  for i, candidate in ipairs(candidates) do
+    if(player.surface.can_place_entity{name=player.character.name, position=candidate.spot}) then
+      return candidate.spot;
+    end
+  end
+  return nil;
+end
+
+function MoveToPointTask:startEscape(player)
+  local spot = self:escapeSpot(player);
+  if(not spot) then
+    return false;
+  end
+  self.escaped = true;
+  self.escape = spot;
+  self.escape_until = game.tick + ESCAPE_TICKS;
+  local p = player.position;
+  log(string.format("No route from (%.1f, %.1f), stepping to (%.1f, %.1f) to ask again", p.x, p.y, spot.x, spot.y), "INFO");
   return true;
 end
 
@@ -257,6 +298,16 @@ function MoveToPointTask:tick (args)
   local player = args.player;
   self:checkProgress(player);
   if(self.stuck) then
+    return;
+  end
+  if(self.escape) then
+    if(util.distance(player.position, self.escape) < 0.3 or game.tick >= self.escape_until) then
+      self.escape = nil;
+      self:requestPath(player);
+    else
+      local direction = self:getDirection(self:getBearingToTarget(player, self.escape));
+      player.walking_state = {walking = true, direction = defines.direction[direction]};
+    end
     return;
   end
   if(self.path_requested and not self.following_done and self:followPath(player)) then

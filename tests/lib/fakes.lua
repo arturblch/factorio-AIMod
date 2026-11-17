@@ -80,7 +80,7 @@ function Fakes.player(opts)
     position = opts.position or { x = 0, y = 0 },
     surface = opts.surface or game.surfaces.nauvis,
     force = game.forces.player,
-    character = { prototype = prototypes.entity["character"] },
+    character = { name = "character", prototype = prototypes.entity["character"] },
     crafting_queue = opts.crafting_queue,
     crafting_queue_size = opts.crafting_queue and #opts.crafting_queue or 0,
     inventory = inventory,

@@ -120,9 +120,19 @@ function ResourceManager:find_natural_source(player, type)
   return nil;
 end
 
+-- A module with a building the bot just failed to walk to.
+local function out_of_reach(source)
+  for i, building in ipairs(source.module and source.module.buildings or {}) do
+    if(building.entity and building.entity.valid and Unreachable.is(building.entity, Unreachable.BUILDING_TICKS)) then
+      return true;
+    end
+  end
+  return false;
+end
+
 function ResourceManager:module_source(type, ready_only)
   for i, source in ipairs(self.sources) do
-    if(source:is_valid() and source:provides_type(type)) then
+    if(source:is_valid() and source:provides_type(type) and not out_of_reach(source)) then
       if(not ready_only or source:has_output(type)) then
         return source;
       end

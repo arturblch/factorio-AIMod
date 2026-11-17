@@ -221,6 +221,20 @@ function BaseModule:productionRate(product)
   return 0;
 end
 
+-- Items of `fuel` per second the module needs brought to it while it works:
+-- what its bot-fueled burners take at full work. A module that feeds
+-- itself (BurnerToBurner) needs none; its own burning is already taken off
+-- its productionRate.
+function BaseModule:fuelUse(fuel)
+  local total = 0;
+  for i, input in ipairs(self.inputs) do
+    if(input.slot == "fuel" and input.type == fuel and input.ongoing ~= false) then
+      total = total + fuel_burn_rate(self.buildings[input.building], fuel);
+    end
+  end
+  return total;
+end
+
 -- A fuel input that has burnt out: nothing in the slot, nothing burning.
 function BaseModule:isStarved()
   for i, input in ipairs(self.inputs) do
