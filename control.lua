@@ -19,8 +19,10 @@ require 'controllers/tasks/collect_module_output_task'
 require 'controllers/tasks/take_from_chest_task'
 require 'controllers/tasks/make_room_task'
 require 'controllers/tasks/production_goal_task'
+require 'controllers/tasks/research_trigger_task'
 require 'controllers/managers/chest_resource_source'
 require 'controllers/managers/build_module_resource_source'
+require 'controllers/managers/research_resource_source'
 require 'controllers/modules/library'
 require 'controllers/managers/manager'
 require 'controllers/managers/resource_manager'
@@ -43,6 +45,7 @@ local persistent_classes = {
   ModuleResourceSource = ModuleResourceSource,
   ChestResourceSource = ChestResourceSource,
   BuildModuleResourceSource = BuildModuleResourceSource,
+  ResearchResourceSource = ResearchResourceSource,
   BaseModule = BaseModule,
   Fringe = Fringe,
   GatherResourceTask = GatherResourceTask,
@@ -60,6 +63,7 @@ local persistent_classes = {
   FuelBuildingTask = FuelBuildingTask,
   WaitForOutputTask = WaitForOutputTask,
   HandSmeltTask = HandSmeltTask,
+  ResearchTriggerTask = ResearchTriggerTask,
   CollectModuleOutputTask = CollectModuleOutputTask,
   TakeFromChestTask = TakeFromChestTask,
   MakeRoomTask = MakeRoomTask,

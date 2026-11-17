@@ -5,6 +5,7 @@ require 'ground_resource_source'
 require 'tree_resource_source'
 require 'craft_resource_source'
 require 'build_module_resource_source'
+require 'research_resource_source'
 require 'controllers/modules/library'
 
 --[[
@@ -14,8 +15,11 @@ require 'controllers/modules/library'
       (ore, trees, rocks),
    3. hand-crafting,
    4. a built module that first needs fuel / time to produce it,
-   5. building a module from ModuleLibrary that makes it (not for optional
-      gathers: fetching things early must not start a building project).
+   5. researching the technology that unlocks its recipe, when research
+      triggers do it (make 50 iron plates for pipes),
+   6. building a module from ModuleLibrary that makes it.
+  5 and 6 not for optional gathers: fetching things early must not start
+  a project.
   Natural sources are looked up on demand, so depleted ore and felled trees
   never linger in a list.
 ]]
@@ -143,6 +147,10 @@ function ResourceManager:best_resource_source(player, type, optional, machine)
   source = self:module_source(type, false);
   if(source or optional) then
     return source;
+  end
+  local research = ResearchResourceSource:new{player=player};
+  if(research:provides_type(type)) then
+    return research;
   end
   local module = ModuleLibrary.producer(player, type, ModuleLibrary.being_built(machine));
   return module and BuildModuleResourceSource:new{module=module} or nil;
