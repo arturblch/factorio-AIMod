@@ -29,7 +29,9 @@ local log = Logger.makeLogger("GrowthTask");
 -- does - wall, steel furnace, concrete - waits behind lab research)
 GrowthTask.MIX = {["iron-plate"] = 2, ["copper-plate"] = 1};
 GrowthTask.FUEL = "coal";
-local COAL_MARGIN = 1.25; -- coal made per coal burnt
+-- coal made per coal burnt: the rest starts new modules (a column of four
+-- pairs takes 160 coal to fuel), smelts by hand and covers the walks
+local COAL_MARGIN = 2;
 local LOW_FUEL = 5;       -- refuel below this many (a burner drill burns 2.25 coal a minute)
 local FUEL_AMOUNT = 20;   -- and top up to this many
 
@@ -99,15 +101,28 @@ function GrowthTask.upkeep(player)
 end
 
 -- The product to build the next module for, or nil when no module can be added.
+-- Coal comes first when the coal modules wouldn't keep up (with a margin)
+-- with what the modules burn together with the next one: a column of four
+-- pairs burns 14.4 coal a minute, as much as half the coal pair makes. With
+-- nothing burning yet the first module is fuelled by hand.
 function GrowthTask.next_product(player)
   local fuel = GrowthTask.FUEL;
   local burnt = 0;
   for i, module in ipairs(modules(player)) do
     burnt = burnt + module:fuelUse(fuel) * 60;
   end
-  if(ModuleLibrary.producer(player, fuel) and ProductionGoalTask.rate(player, fuel) < burnt * COAL_MARGIN) then
+  local item = GrowthTask.next_share(player);
+  local next_module = burnt > 0 and item and ModuleLibrary.producer(player, item);
+  local next_burnt = next_module and next_module:fuelUse(fuel) * 60 or 0;
+  if(ModuleLibrary.producer(player, fuel) and ProductionGoalTask.rate(player, fuel) < (burnt + next_burnt) * COAL_MARGIN) then
     return fuel;
   end
+  return item;
+end
+
+-- The product of GrowthTask.MIX furthest behind its share that a module can
+-- still be added for, or nil.
+function GrowthTask.next_share(player)
   local names = {};
   for item in pairs(GrowthTask.MIX) do
     names[#names + 1] = item;

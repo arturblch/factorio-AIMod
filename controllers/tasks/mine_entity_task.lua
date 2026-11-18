@@ -2,11 +2,21 @@ require 'task'
 require 'util'
 
 require 'controllers/tasks/moveToPointTask'
+require 'util/logger'
 require 'util/unreachable'
 require 'util/inventories'
 
 -- Reach comes from the game (can_reach_entity), not from a constant.
 MineEntityTask = Task:new()
+local log = Logger.makeLogger("MineEntityTask");
+
+-- The character mines whatever is selected. Selecting by position is
+-- ambiguous: tree selection boxes are tall and overlap, and where two overlap
+-- the game selects the tree in front, so a point on the target can select
+-- (and fell) its neighbour. So the task assigns the entity itself as the
+-- selection. One that still doesn't get selected is not mined, and after
+-- this long counts as unreachable so the gather task picks another one.
+local UNSELECTABLE_TICKS = 120;
 
 function MineEntityTask:achieved (args)
   -- gone, or the way to it is blocked (the gather task will pick another one)
@@ -47,9 +57,22 @@ function MineEntityTask:tick (args)
   end
   local reachable = player.can_reach_entity(self.entity)
   if(reachable) then
-    local y = self.entity.position.y + self.entity.prototype.collision_box.left_top.y;
-    player.update_selected_entity({x=self.entity.position.x, y=y});
-    player.mining_state = { mining = true, position = {x=self.entity.position.x, y=y} }
+    -- re-selected every tick: a moving mouse changes the selection
+    if(player.selected ~= self.entity) then
+      player.selected = self.entity;
+    end
+    if(player.selected == self.entity) then
+      self.unselectable_since = nil;
+      player.mining_state = { mining = true, position = self.entity.position }
+    else
+      player.mining_state = {mining = false};
+      self.unselectable_since = self.unselectable_since or game.tick;
+      if(game.tick - self.unselectable_since >= UNSELECTABLE_TICKS) then
+        local p = self.entity.position;
+        log("Can't select " .. self.entity.name .. " at " .. p.x .. ", " .. p.y .. " to mine it, trying another one", "INFO");
+        Unreachable.mark(self.entity); -- achieved() ends the task
+      end
+    end
   else
     args.machine:pushSingle(MoveToPointTask:new{x=self.entity.position.x, y=self.entity.position.y, entity=self.entity, reach=true});
   end

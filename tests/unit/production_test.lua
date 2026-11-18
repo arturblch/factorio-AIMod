@@ -73,17 +73,29 @@ end)
 
 T.describe("ModuleLibrary", function()
   T.it("knows which module makes what", function()
-    T.same(ModuleLibrary.producers("iron-plate"), { BurnerToFurnaceModule }, "iron plates")
+    T.same(ModuleLibrary.producers("iron-plate"), { ModuleLibrary.get("IronColumn4"), BurnerToFurnaceModule }, "iron plates")
     T.same(ModuleLibrary.producers("stone-brick"), { BurnerToFurnaceStoneModule }, "bricks")
-    T.same(ModuleLibrary.producers("coal"), { BurnerToBurnerModule }, "coal")
+    T.same(ModuleLibrary.producers("coal"), { ModuleLibrary.get("CoalRing4"), BurnerToBurnerModule }, "coal")
     T.same(ModuleLibrary.producers("wood"), {}, "wood")
   end)
 
   T.it("skips modules the bot gave up on", function()
     local player = Fakes.player{}
-    T.eq(ModuleLibrary.producer(player, "coal"), BurnerToBurnerModule, "before")
-    storage.failed_goals = { [1] = { "BurnerToBurner" } }
+    T.eq(ModuleLibrary.producer(player, "coal"), ModuleLibrary.get("CoalRing4"), "before")
+    storage.failed_goals = { [1] = { "CoalRing4" } }
+    T.eq(ModuleLibrary.producer(player, "coal"), BurnerToBurnerModule, "the next one")
+    storage.failed_goals = { [1] = { "CoalRing4", "BurnerToBurner" } }
     T.eq(ModuleLibrary.producer(player, "coal"), nil, "after")
+  end)
+
+  T.it("a goal takes the cheapest module that covers it, growth the first", function()
+    local player = Fakes.player{}
+    T.eq(ModuleLibrary.producer(player, "coal", nil, 20), BurnerToBurnerModule, "20 coal a minute: a pair (25.5)")
+    T.eq(ModuleLibrary.producer(player, "coal", nil, 40), ModuleLibrary.get("CoalRing4"), "40: the ring (51)")
+    T.eq(ModuleLibrary.producer(player, "coal"), ModuleLibrary.get("CoalRing4"), "no goal: the list's first")
+    ModuleLibrary.choose{ "CoalRing4", "BurnerToBurner" }
+    T.eq(ModuleLibrary.producer(player, "coal", nil, 20), ModuleLibrary.get("CoalRing4"), "chosen by name: that order")
+    ModuleLibrary.choose(nil)
   end)
 end)
 
@@ -148,10 +160,10 @@ T.describe("ProductionGoalTask", function()
     local task = goal("iron-plate", 10)
     task.building = BuildModuleTask:new{ module = BurnerToFurnaceModule }
     task.building.failed = true
-    storage.failed_goals = { [1] = { "BurnerToFurnace" } }
+    storage.failed_goals = { [1] = { "IronColumn4", "BurnerToFurnace" } }
     tick(task)
     T.truthy(task.failed, "failed")
-    T.same(storage.failed_goals[1], { "BurnerToFurnace", "iron-plate 10/min" }, "both recorded")
+    T.same(storage.failed_goals[1], { "IronColumn4", "BurnerToFurnace", "iron-plate 10/min" }, "all recorded")
   end)
 
   T.it("gives up at once on what no module makes", function()
@@ -224,7 +236,7 @@ T.describe("Modules that others depend on", function()
   T.it("a module being built isn't started again for its own materials", function()
     machine:pushSingle(BuildModuleTask:new{ module = BurnerToFurnaceModule })
     local manager = storage.resource_managers[1]
-    T.eq(manager:best_resource_source(player, "iron-plate", false, machine), nil, "iron plates")
+    T.eq(manager:best_resource_source(player, "iron-plate", false, machine), nil, "iron plates, nor from the column")
     T.eq(manager:best_resource_source(player, "copper-plate", false, machine).module, BurnerToFurnaceCopperModule,
       "copper plates")
   end)

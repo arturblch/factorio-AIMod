@@ -238,9 +238,11 @@ end
 
 -- The first module making `item` that the player's bot hasn't given up on
 -- (see BuildModuleTask:fail) and that isn't in `skip` ({name = true}), or nil.
--- With the "best" choice and `needed` (items a minute a goal still lacks):
--- the cheapest module that makes that much on its own, if one does - a goal
--- of 5 bricks a minute takes one drill and a furnace, not two drills.
+-- With `needed` (items a minute a goal still lacks), unless the player chose
+-- the modules by name: the cheapest module that makes that much on its own,
+-- if one does - a goal of 10 iron plates a minute takes one drill and a
+-- furnace, not the column of four the library lists first for growth; 0
+-- (only the item is wanted, as by GatherResourceTask) takes the cheapest.
 -- While no working module makes `item` yet, nothing could make what a
 -- module built out of `item` still lacks of it (a belt line of 81 iron
 -- plates making iron plates, with 8 in the inventory, waits forever): then
@@ -252,7 +254,8 @@ function ModuleLibrary.producer(player, item, skip, needed)
   local bootstrap = not (manager and manager:module_source(item, false));
   local fallback, fallback_missing = nil, math.huge;
   local candidates = ModuleLibrary.producers(item);
-  if(needed and storage.module_choice == "best") then
+  local choice = storage.module_choice;
+  if(needed and (choice == nil or choice == "best")) then
     local covering = {};
     for i, module in ipairs(candidates) do
       if((ModuleLibrary.report(module).rates[item] or 0) >= needed - 1e-6) then
@@ -287,13 +290,24 @@ function ModuleLibrary.producer(player, item, skip, needed)
   return fallback;
 end
 
--- Names of the modules a BuildModuleTask on `machine`'s stack is building.
+-- Names of the modules a BuildModuleTask on `machine`'s stack is building,
+-- and of every module making what one of them makes: building the pair of
+-- drill and furnace for iron plates is no reason to start the column, which
+-- needs more of the same plates.
 function ModuleLibrary.being_built(machine)
   local names = {};
   local entry = machine and machine.goals;
   while(entry ~= nil) do
     if(getmetatable(entry.current) == BuildModuleTask) then
-      names[entry.current.module.name] = true;
+      local module = entry.current.module;
+      names[module.name] = true;
+      for i, output in ipairs(module.outputs) do
+        for j, other in ipairs(listed) do
+          if(ModuleLibrary.makes(other, output.type)) then
+            names[other.name] = true;
+          end
+        end
+      end
     end
     entry = entry.next;
   end

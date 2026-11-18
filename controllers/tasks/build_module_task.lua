@@ -251,18 +251,55 @@ function BuildModuleTask:canBuildAtPosition(player, position)
   return self:drillsMineOnlyTheirResource(player.surface, corner);
 end
 
--- Center of the module's geometry tile (0, 0), or nil.
+-- The module's first ore tile (top row first), relative to geometry tile
+-- (0, 0): a found ore tile is tried as this one, so only the drills have to
+-- stand on ore. A module whose corner is a furnace (the column FF|DDDD|FF)
+-- otherwise needed ore two tiles wider than its drills.
+function BuildModuleTask.anchor(module)
+  local best;
+  for i, tile in ipairs(module.geometry) do
+    local p = tile.position;
+    if(tile.resource and (not best or p.y < best.y or (p.y == best.y and p.x < best.x))) then
+      best = p;
+    end
+  end
+  return best or {x=0, y=0};
+end
+
+-- Where to look for a spot: next to the nearest module of ours on the same
+-- resource, so that modules go in rows along the patch instead of wherever
+-- the player stands (shorter rounds to fuel and empty them); else around the
+-- player.
+function BuildModuleTask:searchOrigin(player)
+  local manager = storage.resource_managers[player.index];
+  local best, best_distance;
+  for i, source in ipairs(manager and manager.sources or {}) do
+    local module = source.module;
+    local entity = module and module.resource == self.module.resource and module:entity(1);
+    if(entity) then
+      local distance = util.distance(player.position, entity.position);
+      if(not best_distance or distance < best_distance) then
+        best, best_distance = entity.position, distance;
+      end
+    end
+  end
+  return best or player.position;
+end
+
+-- Center of the module's geometry tile (0, 0), or nil: the spot nearest the
+-- search origin where it fits.
 function BuildModuleTask:findLocation(player)
-  local origin = player.position;
+  local origin = self:searchOrigin(player);
+  local anchor = BuildModuleTask.anchor(self.module);
   for i, radius in ipairs(SEARCH_RADII) do
     local resources = player.surface.find_entities_filtered{position=origin, radius=radius, name=self.module.resource}
     table.sort(resources, function(a, b)
       return util.distance(origin, a.position) < util.distance(origin, b.position);
     end)
     for j, resource in ipairs(resources) do
-      local position = resource.position;
+      local position = {x=resource.position.x - anchor.x, y=resource.position.y - anchor.y};
       if(not self:isBadSpot(position) and self:canBuildAtPosition(player, position)) then
-        return {x=position.x, y=position.y};
+        return position;
       end
     end
   end
