@@ -19,8 +19,11 @@ require 'controllers/tasks/collect_module_output_task'
 require 'controllers/tasks/take_from_chest_task'
 require 'controllers/tasks/make_room_task'
 require 'controllers/tasks/production_goal_task'
+require 'controllers/tasks/research_trigger_task'
+require 'controllers/tasks/growth_task'
 require 'controllers/managers/chest_resource_source'
 require 'controllers/managers/build_module_resource_source'
+require 'controllers/managers/research_resource_source'
 require 'controllers/modules/library'
 require 'controllers/managers/manager'
 require 'controllers/managers/resource_manager'
@@ -43,6 +46,7 @@ local persistent_classes = {
   ModuleResourceSource = ModuleResourceSource,
   ChestResourceSource = ChestResourceSource,
   BuildModuleResourceSource = BuildModuleResourceSource,
+  ResearchResourceSource = ResearchResourceSource,
   BaseModule = BaseModule,
   Fringe = Fringe,
   GatherResourceTask = GatherResourceTask,
@@ -60,6 +64,8 @@ local persistent_classes = {
   FuelBuildingTask = FuelBuildingTask,
   WaitForOutputTask = WaitForOutputTask,
   HandSmeltTask = HandSmeltTask,
+  ResearchTriggerTask = ResearchTriggerTask,
+  GrowthTask = GrowthTask,
   CollectModuleOutputTask = CollectModuleOutputTask,
   TakeFromChestTask = TakeFromChestTask,
   MakeRoomTask = MakeRoomTask,
@@ -88,8 +94,24 @@ end
 function AIMod.default_goals()
   return {
     ProductionGoalTask:new{item="iron-plate", per_minute=10},
-    ProductionGoalTask:new{item="coal", per_minute=20}
+    ProductionGoalTask:new{item="coal", per_minute=20},
+    -- then keep the modules going and add more, without end
+    GrowthTask:new{}
   };
+end
+
+-- The goals are met (all of them, or those before GrowthTask): say so once.
+function AIMod.goals_done(player)
+  if(storage.goals_done[player.index]) then
+    return;
+  end
+  storage.goals_done[player.index] = true;
+  local failed = storage.failed_goals and storage.failed_goals[player.index];
+  if(failed and #failed > 0) then
+    player.print("Finished goals, could not build: " .. table.concat(failed, ", "));
+  else
+    player.print("Completed goals");
+  end
 end
 
 function AIMod.setup_bot(player)
@@ -111,14 +133,8 @@ function AIMod.tick_bot(player, machine)
 
   if(not machine:achieved{ player=player }) then
     machine:tick{ player=player }
-  elseif(not storage.goals_done[player.index]) then
-    storage.goals_done[player.index] = true
-    local failed = storage.failed_goals and storage.failed_goals[player.index]
-    if(failed and #failed > 0) then
-      player.print("Finished goals, could not build: " .. table.concat(failed, ", "))
-    else
-      player.print("Completed goals")
-    end
+  else
+    AIMod.goals_done(player);
   end
 end
 
