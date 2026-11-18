@@ -15,6 +15,8 @@
   Everything goes to the Factorio log with a "[test]" tag.
 ]]
 
+require 'util/production_score'
+
 local SNAPSHOT_EVERY = 1800 -- ticks (30 s of game time)
 local MAX_TRANSITION_LINES = 400
 
@@ -137,6 +139,12 @@ local function test_flag(name)
   return (script.test_arg or ""):find(name, 1, true) ~= nil
 end
 local function noise_enabled() return test_flag("cursor-noise") end
+
+-- `score` (run-headless.ps1 -Score): the production score after each snapshot;
+-- the last one logged is the run's result
+local function log_score(player)
+  if test_flag("score") then log("[test]   score " .. ProductionScore.score(player.force)) end
+end
 
 local function current_target(machine)
   local top = machine.goals and machine.goals.current
@@ -269,12 +277,14 @@ script.on_event(defines.events.on_tick, function(event)
 
   if event.tick % SNAPSHOT_EVERY == 0 then
     snapshot(event.tick, player, machine)
+    log_score(player)
     if not check_storage(event.tick) then return end
   end
   if storage.goals_done and storage.goals_done[1] and not t.completed then
     t.completed = true
     local failed = storage.failed_goals and storage.failed_goals[1] or {}
     snapshot(event.tick, player, machine)
+    log_score(player)
     if noise_enabled() then
       log("[test] cursor noise: decoy selected on " .. (t.noise_ticks or 0) .. " ticks, " ..
         (t.unintended or 0) .. " unintended entities mined")

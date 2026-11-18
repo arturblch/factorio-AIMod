@@ -56,7 +56,10 @@ param(
   [switch]$FullInventory,
   # replace the bot's goals, comma separated: <item>:<n> = make n per minute,
   # have:<item>:<n> = have n in the inventory, e.g. "copper-plate:10,have:copper-cable:20"
-  [string]$Goals
+  [string]$Goals,
+  # also print the production score (util/production_score.lua): after every
+  # snapshot, and the last one per seed and in total
+  [switch]$Score
 )
 $ErrorActionPreference = "Stop"
 $repo = Split-Path -Parent $PSScriptRoot
@@ -174,6 +177,7 @@ foreach ($s in ($Seed -split ',' | ForEach-Object { [uint32]$_.Trim() })) {
   $flags = @()
   if ($CursorNoise) { $flags += "cursor-noise" }
   if ($FullInventory) { $flags += "full-inventory" }
+  if ($Score) { $flags += "score" }
   foreach ($g in ($Goals -split ',' | Where-Object { $_.Trim() })) {
     $g = $g.Trim()
     $flags += $(if ($g -like "have:*") { $g } else { "goal:$g" })
@@ -184,6 +188,11 @@ foreach ($s in ($Seed -split ',' | ForEach-Object { [uint32]$_.Trim() })) {
   $test = @($lines | Where-Object { $_ -match $testPrefix } | ForEach-Object { $_ -replace $testPrefix, '' })
   $errors = @($lines | Where-Object { $_ -match $errorPattern })
   $completed = $test | Where-Object { $_ -match '^COMPLETED' } | Select-Object -First 1
+  # the last score logged: at the end of the run, or the last snapshot
+  $points = $null
+  $scoreLine = $test | Where-Object { $_ -match '^\s*score -?\d+' } | Select-Object -Last 1
+  if ($scoreLine -match 'score (-?\d+)') { $points = [long]$Matches[1] }
+  $scoreNote = if ($null -ne $points) { "score $points" } else { $null }
 
   if (-not $Brief) {
     $transitions = @($test | Where-Object { $_ -match ' goal -> ' })
@@ -211,17 +220,17 @@ foreach ($s in ($Seed -split ',' | ForEach-Object { [uint32]$_.Trim() })) {
     $errors | Select-Object -First 10
     if ($errors.Count -eq 0 -and $explained.Count -eq 0) { $lines | Select-Object -Last 15 }
     $why = @($explained + $errors + "exit code $($p.ExitCode)")[0]
-    $runs.Add([pscustomobject]@{ Seed = $s; Result = "FAILED: $why"; Ticks = $null })
+    $runs.Add([pscustomobject]@{ Seed = $s; Result = "FAILED: $why"; Ticks = $null; Score = $points })
   } elseif ($completed) {
     $extra = @($test | Where-Object { $_ -match '^cursor noise|^full inventory' })
-    Write-Host ((@("seed ${s}: OK, $completed") + $extra) -join "; ") -ForegroundColor Green
+    Write-Host ((@("seed ${s}: OK, $completed") + $extra + $scoreNote | Where-Object { $_ }) -join "; ") -ForegroundColor Green
     $ticksTaken = if ($completed -match 't=(\d+)') { [int]$Matches[1] } else { $null }
-    $runs.Add([pscustomobject]@{ Seed = $s; Result = "OK"; Ticks = $ticksTaken })
+    $runs.Add([pscustomobject]@{ Seed = $s; Result = "OK"; Ticks = $ticksTaken; Score = $points })
   } else {
     $failed++
     $last = $test | Where-Object { $_ -match ' pos=' } | Select-Object -Last 1
-    Write-Host "seed ${s}: NOT COMPLETED within $Ticks ticks; last snapshot: $last" -ForegroundColor Yellow
-    $runs.Add([pscustomobject]@{ Seed = $s; Result = "NOT COMPLETED within $Ticks ticks"; Ticks = $null })
+    Write-Host ((@("seed ${s}: NOT COMPLETED within $Ticks ticks; last snapshot: $last") + $scoreNote | Where-Object { $_ }) -join "; ") -ForegroundColor Yellow
+    $runs.Add([pscustomobject]@{ Seed = $s; Result = "NOT COMPLETED within $Ticks ticks"; Ticks = $null; Score = $points })
   }
 }
 
@@ -231,11 +240,17 @@ $total = ($ok | Measure-Object -Property Ticks -Sum).Sum
 $mode = "scenario"
 if ($CursorNoise) { $mode += " -CursorNoise" }
 if ($FullInventory) { $mode += " -FullInventory" }
+if ($Score) { $mode += " -Score" }
 $tally = "$($ok.Count) of $($runs.Count) seeds completed, $(if ($total) { $total } else { 0 }) ticks in total"
+# the score of every seed, completed or not
+if ($Score) { $tally += ", score $(($runs | Measure-Object -Property Score -Sum).Sum) in total" }
 if ($runs.Count -gt 1) { Write-Host $tally -ForegroundColor $(if ($failed -gt 0) { "Red" } else { "Green" }) }
 foreach ($r in $runs) { if ($r.Result -ne "OK") { Write-Annotation "$mode seed $($r.Seed)" $r.Result } }
-Write-JobSummary (@("### $mode", "", $tally, "", "| seed | result | ticks |", "|---:|---|---:|") +
-  @($runs | ForEach-Object { "| $($_.Seed) | $($_.Result -replace '\|', '/') | $($_.Ticks) |" }) + "")
+$header = if ($Score) { @("| seed | result | ticks | score |", "|---:|---|---:|---:|") } else { @("| seed | result | ticks |", "|---:|---|---:|") }
+Write-JobSummary (@("### $mode", "", $tally, "") + $header +
+  @($runs | ForEach-Object {
+    "| $($_.Seed) | $($_.Result -replace '\|', '/') | $($_.Ticks) |" + $(if ($Score) { " $($_.Score) |" } else { "" })
+  }) + "")
 
 if (-not $Brief) { Write-Host "Full logs: $WorkDir" }
 if ($failed -gt 0) { exit 1 }
