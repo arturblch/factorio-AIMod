@@ -1,0 +1,6 @@
+{"blueprint": {"label": "Burner drill to stone furnace", "item": "blueprint",
+  "icons": [{"signal": {"name": "burner-mining-drill"}, "index": 1}, {"signal": {"name": "stone-furnace"}, "index": 2}],
+  "entities": [
+    {"entity_number": 1, "name": "burner-mining-drill", "position": {"x": 1, "y": 1}, "direction": 4},
+    {"entity_number": 2, "name": "stone-furnace", "position": {"x": 3, "y": 1}}
+  ]}}

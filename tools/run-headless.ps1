@@ -65,7 +65,10 @@ param(
   [switch]$Grow,
   # peaceful mode: biters attack only when attacked (long -Grow runs draw
   # attacks with their pollution after ~15 minutes)
-  [switch]$Peaceful
+  [switch]$Peaceful,
+  # the modules the bot builds, best first, by name from blueprints/library.lua
+  # (as /aimod-use in game), e.g. "IronToChest,BurnerToFurnaceCopper,BurnerToBurner"
+  [string]$Modules
 )
 $ErrorActionPreference = "Stop"
 $repo = Split-Path -Parent $PSScriptRoot
@@ -186,6 +189,7 @@ foreach ($s in ($Seed -split ',' | ForEach-Object { [uint32]$_.Trim() })) {
   if ($Score -or $Grow) { $flags += "score" }
   if ($Grow) { $flags += "grow:$($Ticks - 60)" }
   if ($Peaceful) { $flags += "peaceful" }
+  if ($Modules) { $flags += "modules:" + (($Modules -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ }) -join '+') }
   foreach ($g in ($Goals -split ',' | Where-Object { $_.Trim() })) {
     $g = $g.Trim()
     $flags += $(if ($g -like "have:*") { $g } else { "goal:$g" })

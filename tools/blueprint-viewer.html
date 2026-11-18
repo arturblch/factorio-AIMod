@@ -1,0 +1,569 @@
+<title>Чертежи бота AIMod</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Titillium+Web:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+  /* Layout: a Factorio-style control panel - a header, the bot's library as
+     cards (map left, what the bot reads from it right), the checks it runs,
+     then a paste box for any blueprint. */
+  :root {
+    --bg: #e7e4df; --panel: #f6f4f1; --inset: #dad6cf; --line: #c4beb4;
+    --text: #25221d; --muted: #6a6358; --accent: #b4600b; --accent-text: #ffffff;
+    --ok: #3f7a2a; --warn: #9a5a00; --bad: #b3261e;
+    --drill: #8c6a33; --furnace: #6f655c; --inserter: #b9931b; --chest: #8a5a2c;
+    --belt: #7d7a34; --machine: #4f6a86; --other: #6b7280;
+    --grid: rgba(60, 50, 40, 0.10); --flow: #1f6fb2; --bar: #d8c6a8;
+    --ui: "Titillium Web", "Segoe UI", system-ui, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #242322; --panel: #31302e; --inset: #1b1a19; --line: #4a4744;
+      --text: #ebe3d4; --muted: #a39b8d; --accent: #f2a43c; --accent-text: #1b1a19;
+      --ok: #8fcf6a; --warn: #f0b44b; --bad: #ff8a80;
+      --grid: rgba(255, 240, 220, 0.07); --flow: #6cb4f0; --bar: #5a4a32;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #242322; --panel: #31302e; --inset: #1b1a19; --line: #4a4744;
+    --text: #ebe3d4; --muted: #a39b8d; --accent: #f2a43c; --accent-text: #1b1a19;
+    --ok: #8fcf6a; --warn: #f0b44b; --bad: #ff8a80;
+    --grid: rgba(255, 240, 220, 0.07); --flow: #6cb4f0; --bar: #5a4a32;
+    color-scheme: dark;
+  }
+  body {
+    background: var(--bg); color: var(--text); font-family: var(--ui); font-size: 15px; line-height: 1.5;
+    padding-block: 24px 48px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  .page { max-width: 1080px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
+  h1, h2, h3 { margin: 0; text-wrap: balance; font-weight: 700; }
+  h1 { font-size: 30px; letter-spacing: 0.01em; }
+  h2 { font-size: 21px; }
+  h3 { font-size: 17px; }
+  p { margin: 0; max-width: 70ch; }
+  .muted { color: var(--muted); }
+  code, .mono { font-family: var(--mono); font-size: 0.86em; }
+  header { display: flex; flex-direction: column; gap: 8px; }
+  .eyebrow { text-transform: uppercase; letter-spacing: 0.12em; font-size: 12px; color: var(--accent); font-weight: 600; }
+  section { display: flex; flex-direction: column; gap: 14px; }
+  .section-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; }
+  .cards { display: grid; grid-template-columns: 1fr; gap: 14px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+    display: grid; grid-template-columns: minmax(0, 340px) minmax(0, 1fr); gap: 18px; padding: 16px;
+  }
+  @media (max-width: 760px) { .card { grid-template-columns: minmax(0, 1fr); } }
+  .map { background: var(--inset); border-radius: 4px; padding: 10px; overflow-x: auto; display: flex; align-items: center; justify-content: center; min-height: 120px; }
+  .map svg { display: block; max-width: 100%; height: auto; }
+  .facts { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .title-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+  .chip { font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+  .chip.on { color: var(--ok); border-color: currentColor; }
+  dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 14px; margin: 0; }
+  dt { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; padding-top: 3px; }
+  dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+  .num { font-variant-numeric: tabular-nums; }
+  .score { display: flex; align-items: center; gap: 10px; }
+  .score-bar { flex: 0 1 160px; height: 8px; background: var(--inset); border-radius: 4px; overflow: hidden; }
+  .score-bar i { display: block; height: 100%; background: var(--accent); }
+  .checks { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; }
+  .checks li { padding-left: 14px; position: relative; }
+  .checks li::before { content: ""; position: absolute; left: 0; top: 0.6em; width: 7px; height: 7px; border-radius: 50%; }
+  .checks .bad { color: var(--bad); } .checks .bad::before { background: var(--bad); }
+  .checks .warn { color: var(--warn); } .checks .warn::before { background: var(--warn); }
+  .checks .good { color: var(--ok); } .checks .good::before { background: var(--ok); }
+  .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  button, select {
+    font: inherit; font-size: 14px; border-radius: 4px; border: 1px solid var(--line); background: var(--inset); color: var(--text);
+    padding: 5px 12px; cursor: pointer;
+  }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+  button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  button:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  textarea {
+    width: 100%; min-height: 96px; resize: vertical; box-sizing: border-box; font-family: var(--mono); font-size: 13px;
+    background: var(--inset); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 10px;
+  }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .error { color: var(--bad); font-weight: 600; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .swatch { width: 12px; height: 12px; border-radius: 2px; display: inline-block; }
+  .copied { color: var(--ok); font-size: 13px; }
+  .hidden-copy { position: absolute; left: -9999px; }
+  .book { display: flex; flex-wrap: wrap; gap: 6px; }
+  .check-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 10px 24px; }
+  .check-list div { min-width: 0; }
+  .check-list b { display: block; }
+  @media (prefers-reduced-motion: no-preference) { button { transition: filter .12s; } button:hover { filter: brightness(1.08); } }
+</style>
+
+<div class="page">
+  <header>
+    <div class="eyebrow">AIMod · пункт 3.2 плана</div>
+    <h1>Чертежи бота AIMod</h1>
+    <p class="muted">Модули, которые бот строит, заданы строками чертежей Factorio в <code>blueprints/library.lua</code>.
+      Здесь видно, что бот из них понимает: где нужна руда, как предметы идут по зданиям и лентам, что он заправляет сам, где забирает продукт,
+      что модуль стоит и сколько даёт. Ниже можно разобрать любую строку чертежа.</p>
+  </header>
+
+  <section>
+    <div class="section-head">
+      <h2>Библиотека бота</h2>
+      <div class="actions" role="group" aria-label="Порядок">
+        <span class="muted">Порядок:</span>
+        <button id="order-list" aria-pressed="true">как в списке</button>
+        <button id="order-score" aria-pressed="false">по оценке (/aimod-use best)</button>
+      </div>
+    </div>
+    <div class="legend" id="legend"></div>
+    <div class="cards" id="library"></div>
+  </section>
+
+  <section>
+    <h2>Какие проверки делает бот</h2>
+    <div class="panel check-list">
+      <div><b class="error">Ошибка — модуль не попадает в библиотеку</b>
+        <span class="muted">бур выбрасывает на землю; манипулятору неоткуда брать или некуда класть; продукт негде забрать (нет печи без разгрузки и нет сундука); чертёж не делает заявленный <code>product</code>.</span></div>
+      <div><b style="color: var(--warn)">Предупреждение — модуль слабый</b>
+        <span class="muted">лента ничего не везёт; лента кончается, а с неё никто не берёт; печь не получает сырья; печи простаивают больше 25 % или буры дают на 25 % больше, чем печи плавят.</span></div>
+      <div><b>Оценка — выбор между вариантами</b>
+        <span class="muted">(ценность выработки − ценность сжигаемого угля) в минуту, делённое на ценность постройки, по ценам счёта производства.
+          С <code>/aimod-use best</code> для цели (например, 5 кирпичей в минуту) бот берёт самый дешёвый модуль, который сам её покрывает, а для роста — модуль с наибольшей оценкой.</span></div>
+      <div><b>Старт</b>
+        <span class="muted">пока продукт никто не делает, бот берёт модуль, который можно построить из того, что у него есть: линии на ленте не хватает 64 железных пластин, поэтому первым встаёт простой «бур → печь».</span></div>
+      <div><b>Справочно</b>
+        <span class="muted">сколько зданий заправлять и угля в минуту; через сколько минут выход заполнится и модуль встанет; загрузка печей.</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Разобрать свой чертёж</h2>
+    <div class="panel">
+      <p class="muted">Вставьте строку чертежа из игры (чертёж → «Экспорт строки») или с сайта чертежей. Книга чертежей тоже подойдёт.</p>
+      <textarea id="input" spellcheck="false" aria-label="Строка чертежа"></textarea>
+      <div class="row">
+        <label for="resource">Руда для буров</label>
+        <select id="resource">
+          <option value="iron-ore">железная руда</option>
+          <option value="copper-ore">медная руда</option>
+          <option value="stone">камень</option>
+          <option value="coal">уголь</option>
+        </select>
+        <button class="primary" id="parse">Разобрать</button>
+      </div>
+      <div id="book" class="book"></div>
+      <div id="result"></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Как добавить чертёж боту</h2>
+    <p>Строку чертежа впишите в <code>BLUEPRINTS</code>, а модуль — в список <code>modules</code> файла
+      <code>blueprints/library.lua</code>: <code>{name="IronLine", blueprint="ключ", resource="iron-ore", product="iron-plate"}</code>.
+      Бот берёт для продукта первый модуль списка, который его делает; <code>off=true</code> оставляет модуль в списке, но не строит его.
+      В игре: <code>/aimod-modules</code> — список с оценками и предупреждениями, <code>/aimod-use</code> — какие модули строить
+      (<code>best</code> — по оценке, <code>default</code> — как в файле), <code>/aimod-plan ИмяМодуля</code> — на минуту показать, где встанет модуль.
+      Эту страницу обновляет <code>node tools/blueprint.js viewer</code>.</p>
+  </section>
+</div>
+
+<textarea class="hidden-copy" id="copy-buffer" aria-hidden="true" tabindex="-1"></textarea>
+
+<script>
+// Game data read from Factorio 2.1.24: sizes, mining radius, where drills drop, inserter reach, ore map colours.
+const GAME = {"entities":{"burner-mining-drill":{"type":"mining-drill","w":2,"h":2,"burner":true,"radius":0.99,"drop":[-0.35,-1.3],"speed":0.25},"electric-mining-drill":{"type":"mining-drill","w":3,"h":3,"radius":2.49,"drop":[0,-1.85],"speed":0.5},"stone-furnace":{"type":"furnace","w":2,"h":2,"burner":true,"speed":1},"steel-furnace":{"type":"furnace","w":2,"h":2,"burner":true,"speed":2},"electric-furnace":{"type":"furnace","w":3,"h":3,"speed":2},"burner-inserter":{"type":"inserter","w":1,"h":1,"burner":true,"pick":[0,-1],"put":[0,1.2]},"inserter":{"type":"inserter","w":1,"h":1,"pick":[0,-1],"put":[0,1.2]},"long-handed-inserter":{"type":"inserter","w":1,"h":1,"pick":[0,-2],"put":[0,2.2]},"fast-inserter":{"type":"inserter","w":1,"h":1,"pick":[0,-1],"put":[0,1.2]},"wooden-chest":{"type":"container","w":1,"h":1},"iron-chest":{"type":"container","w":1,"h":1},"steel-chest":{"type":"container","w":1,"h":1},"transport-belt":{"type":"transport-belt","w":1,"h":1},"underground-belt":{"type":"underground-belt","w":1,"h":1},"splitter":{"type":"splitter","w":2,"h":1},"assembling-machine-1":{"type":"assembling-machine","w":3,"h":3,"speed":0.5},"assembling-machine-2":{"type":"assembling-machine","w":3,"h":3,"speed":0.75},"lab":{"type":"lab","w":3,"h":3},"boiler":{"type":"boiler","w":3,"h":2,"burner":true},"steam-engine":{"type":"generator","w":3,"h":5},"offshore-pump":{"type":"offshore-pump","w":1,"h":1},"small-electric-pole":{"type":"electric-pole","w":1,"h":1},"medium-electric-pole":{"type":"electric-pole","w":1,"h":1},"pipe":{"type":"pipe","w":1,"h":1},"pipe-to-ground":{"type":"pipe-to-ground","w":1,"h":1},"radar":{"type":"radar","w":3,"h":3},"stone-wall":{"type":"wall","w":1,"h":1}},"resources":{"iron-ore":{"color":[105,133,147],"time":1},"copper-ore":{"color":[204,98,54],"time":1},"stone":{"color":[175,155,108],"time":1},"coal":{"color":[0,0,0],"time":1},"uranium-ore":{"color":[0,178,0],"time":2},"crude-oil":{"color":[198,51,196],"time":1}}};
+// Prices of the production score, building recipes, burner power (W), chest slots, stack sizes; same game.
+const ECON = {"prices":{"iron-ore":3.1,"copper-ore":3.6,"stone":2.4,"coal":3,"wood":3.2,"iron-plate":5.627,"copper-plate":6.323,"stone-brick":7.944,"steel-plate":43.161,"iron-gear-wheel":12.614,"copper-cable":3.558,"electronic-circuit":18.346},"recipes":{"burner-mining-drill":[{"iron-plate":3,"iron-gear-wheel":3,"stone-furnace":1},1],"electric-mining-drill":[{"iron-plate":10,"iron-gear-wheel":5,"electronic-circuit":3},1],"stone-furnace":[{"stone":5},1],"steel-furnace":[{"steel-plate":6,"stone-brick":10},1],"burner-inserter":[{"iron-plate":1,"iron-gear-wheel":1},1],"inserter":[{"iron-plate":1,"iron-gear-wheel":1,"electronic-circuit":1},1],"long-handed-inserter":[{"iron-plate":1,"iron-gear-wheel":1,"inserter":1},1],"fast-inserter":[{"iron-plate":2,"electronic-circuit":2,"inserter":1},1],"wooden-chest":[{"wood":2},1],"iron-chest":[{"iron-plate":8},1],"steel-chest":[{"steel-plate":8},1],"transport-belt":[{"iron-plate":1,"iron-gear-wheel":1},2],"underground-belt":[{"iron-plate":10,"transport-belt":5},2],"splitter":[{"iron-plate":5,"electronic-circuit":5,"transport-belt":4},1],"assembling-machine-1":[{"iron-plate":9,"iron-gear-wheel":5,"electronic-circuit":3},1],"lab":[{"iron-gear-wheel":10,"electronic-circuit":10,"transport-belt":4},1],"boiler":[{"pipe":4,"stone-furnace":1},1],"steam-engine":[{"iron-plate":10,"iron-gear-wheel":8,"pipe":5},1],"offshore-pump":[{"iron-gear-wheel":2,"pipe":3},1],"small-electric-pole":[{"wood":1,"copper-cable":2},2],"pipe":[{"iron-plate":1},1],"pipe-to-ground":[{"iron-plate":5,"pipe":10},2],"iron-gear-wheel":[{"iron-plate":2},1],"copper-cable":[{"copper-plate":1},2],"electronic-circuit":[{"iron-plate":1,"copper-cable":3},1]},"energy":{"burner-mining-drill":150000,"stone-furnace":90000,"steel-furnace":90000,"burner-inserter":144000,"boiler":1800000},"slots":{"wooden-chest":16,"iron-chest":32,"steel-chest":48},"stack":{"iron-plate":100,"copper-plate":100,"stone-brick":100,"steel-plate":100,"coal":50,"stone":50,"iron-ore":50,"copper-ore":50,"wood":100}};
+
+// The bot's library, copied from blueprints/library.lua by `node tools/blueprint.js viewer`.
+const LIBRARY = /*LIBRARY-START*/{"blueprints":{"burner-furnace":"0eNp9js1qwzAQhF/FzFk+WHFSrGNfI4Tgn21YkFdBkkOC0bsHKQktbehx2ZnvmxWDXejsWSLMCtsPZGHwuXghX02era2iq0J0QtXX4qUfCQocaYb50VXg0UmA2a8IfJLeZpz0M+VYodUzC8upLlAkBZaJrjBNUm86xVi/jN9pnQ4KJJEj00NXjttRlnkgD9Oo/7QKZxc4spPsupb4rWzAxJ7Gx6fNk35xtXo/7Q9x8yTmoRfyoXy2O91tW9123a5pP3RKdyJWfww=","coal-pair":"0eNqVjsFqwzAQRH9FzFk5WHVSrO/orYQi21tnQV4FSW4SjP49WLmEEgo9Djv73qzo/ULnyJJhV3jXk4fFxyWofolCUY2RvU/qm2hkmRS54aRCPlGEBmeaYZ8QGjwESbCfKxJP4vxGFTfTVqvA3czCMu0qF0WDZaQrbFP0i58huOeSKUcNksyZ6WGp4fYly9xThG30XzaNc0icOcimuNb6raoxcqThcWm3Jb+45n/ct1fcpq7/oZhq3B9Mt29N23WHpn03pdwBpt2FCA==","burner-chest":"0eNp9js1qwzAQhF9FzFkOtbBTrGNfI5TgnyVdkFdBkpsEo3cvlg8tbehx2ZnvmxWDW+gaWBLsCtcP5GDxtgShoKbAzimW5FWvbt5PJGr8oJigwYlm2B91DR69RNjTisgX6d1GlH6mLVaA1czCcqkKF1mDZaI7bJ31k84urHbhd9jkdw2SxIlpt5XjcZZlHijA1vo/q8bVR07sZVPdS/xRJmDiQOP+abZFv7hGP132B2gObUG+HNq8bf2kEMu3PZqubUzTdce6eTU5fwFguH/q","furnace-chest":"0eNpt0N1qwzAMBeBXMbp2yuLaHfFlX2OMkR+tEzhysZ2tJeTdR5yWdU0ujcV3jjRC4wY8B+IEdgRXN+jAwnEIjEF0gZyTIibPKD6HwHWLUhBHDAmDIE5e1OLH+w5ZtF8YE0ighD3YB1cCtZ4j2LcRIp24dnMU1z2ChWwXNxsmCcQdXsCWk9yYXqKKJepvWE3vEpATJcIlJz+uHzz0DQawpbwLTd6s6ImJT0VeECScfaREnueoSx6/5grQUcB2+dFzoydXye09VuL+Jm4Y++du9/uuFb0z2XnZmf/dSrUBa7l5tpVqHtT5kN8YYv41B1UZrXRVHUr9qqbpF0Knusc=","pair-furnace":"0eNqVkEFqwzAQRa8iZi0vrNgp1jm6KyXI9sQMyKMgyU2C0d2DlISU1hS6GRjm672PVujtgidPHEGvYE2PFjS8n53oF8/oxejJ2iCOZiCehGMUIeZ5XDybAUECRZxBfwNJoMFxAP2xQqCJjc1sNjPmWMFWMzHxVBU6JAnEI15A10luvCnG6ml8pVX6lIAcKRLedWW5HniZe/Sga/mXVsLJBYrkOLsuJX4tHWAkj8P90uRKP7hKblf7Rdw9iBuM3f+6tVvd6vIDX+hDWdu96tpGNV23r5s3ldINJKqhrg==","belt-line":"0eNqV1tFugjAUBuBXac51NWtpQXiAvcRiFtCzpQkW0xajMbz7As5MN6bnXEKb72+hf+AMTdvjPjifoDpDWzfYQgWv7oCi6YPHILbBtW0UnU+dqEWDbZLio+uDcD5iSBiicOPYdC+mzqP46IOvNxhBgku4g+omRYLbdD5C9XaG6D593Y7Bvt4hVJBC7eO+C2kx5sAgwfktHqFSg5yZPqUtvtNuZuthLQF9csnhJWm6OL37ftdggErJK3HZ5GLnvPOfi2mvIGHfRZdc58es4zT9NK0Bti7g5jKyGpf0y9U8N6O6Gc+1VNfw3ILqWp5bUt1c/nNS/r6y5eUh6KW9Z80MW5BZzWFXZDbjsCWZNRxWvZBdy3IV2c1Zria7BcvNyO6K5RqyW7JcSy/FCwtmtI1VN0Xvm2IVTtEbp1iVU/TOKVbpNL10itU6TW+dYtVO//nGXf8DHpy3bGmHOStjWPqJZRiWeWJZhpU/sX5adP+7MlOiyZlXCrKSPVBWZMU+UEqyUlyVtYQDhjgN2VyX1mhTlrkyhR6GL0ngeso="},"modules":[{"name":"BurnerToFurnace","blueprint":"burner-furnace","resource":"iron-ore","product":"iron-plate"},{"name":"BurnerToFurnaceCopper","blueprint":"burner-furnace","resource":"copper-ore","product":"copper-plate"},{"name":"StonePairFurnace","blueprint":"pair-furnace","resource":"stone","product":"stone-brick","off":true},{"name":"BurnerToFurnaceStone","blueprint":"burner-furnace","resource":"stone","product":"stone-brick"},{"name":"BurnerToBurner","blueprint":"coal-pair","resource":"coal","product":"coal"},{"name":"IronToChest","blueprint":"furnace-chest","resource":"iron-ore","product":"iron-plate","off":true},{"name":"IronBeltLine","blueprint":"belt-line","resource":"iron-ore","product":"iron-plate","off":true},{"name":"StoneToChest","blueprint":"burner-chest","resource":"stone","product":"stone","off":true}]}/*LIBRARY-END*/;
+
+// what a stone furnace makes: ingredient -> [product, ingredients per craft, seconds]
+const SMELT = { "iron-ore": ["iron-plate", 1, 3.2], "copper-ore": ["copper-plate", 1, 3.2], "stone": ["stone-brick", 2, 3.2], "iron-plate": ["steel-plate", 5, 16] };
+const COAL_J = 4e6;
+const FUEL = "coal", KEEP_FUEL = 5;
+const BELTS = new Set(["transport-belt", "underground-belt", "splitter"]);
+const NAMES = {
+  "burner-mining-drill": "бур", "electric-mining-drill": "эл. бур", "stone-furnace": "печь", "steel-furnace": "печь",
+  "electric-furnace": "эл. печь", "burner-inserter": "манипулятор", "inserter": "манипулятор", "long-handed-inserter": "манипулятор",
+  "fast-inserter": "манипулятор", "wooden-chest": "сундук", "iron-chest": "сундук", "steel-chest": "сундук",
+  "transport-belt": "лента", "underground-belt": "подземная лента", "splitter": "разделитель",
+  "assembling-machine-1": "автомат", "assembling-machine-2": "автомат", "lab": "лаборатория", "boiler": "бойлер",
+  "steam-engine": "паровой двигатель", "offshore-pump": "насос", "radar": "радар",
+};
+const SHORT = { "burner-inserter": "м", "inserter": "м", "long-handed-inserter": "м", "fast-inserter": "м", "wooden-chest": "с", "iron-chest": "с", "steel-chest": "с" };
+const ITEMS = {
+  "iron-ore": "железная руда", "copper-ore": "медная руда", "stone": "камень", "coal": "уголь", "wood": "дерево",
+  "iron-plate": "железные пластины", "copper-plate": "медные пластины", "stone-brick": "кирпичи", "steel-plate": "сталь",
+};
+const KIND_COLOR = {
+  "mining-drill": "var(--drill)", "furnace": "var(--furnace)", "inserter": "var(--inserter)", "container": "var(--chest)",
+  "transport-belt": "var(--belt)", "underground-belt": "var(--belt)", "splitter": "var(--belt)",
+  "assembling-machine": "var(--machine)", "lab": "var(--machine)",
+};
+
+const item = name => ITEMS[name] || name;
+const data = name => GAME.entities[name] || { type: "?", w: 1, h: 1 };
+const fmt = (v, d = 1) => v.toFixed(d).replace(".", ",");
+
+async function decode(text) {
+  text = text.replace(/\s+/g, "");
+  if (!text) throw new Error("Вставьте строку чертежа.");
+  if (text[0] !== "0") throw new Error("Это не строка чертежа: такие строки начинаются с «0».");
+  let bytes;
+  try { bytes = Uint8Array.from(atob(text.slice(1)), c => c.charCodeAt(0)); }
+  catch (e) { throw new Error("Строка повреждена: это не base64."); }
+  try {
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate"));
+    return JSON.parse(await new Response(stream).text());
+  } catch (e) {
+    throw new Error("Строка повреждена: не распаковывается.");
+  }
+}
+
+function rotate([x, y], direction) {
+  for (let i = 0; i < Math.floor((direction || 0) / 4) % 4; i++) [x, y] = [-y, x];
+  return [x, y];
+}
+
+function footprint(e) {
+  const d = data(e.name);
+  let [w, h] = [d.w, d.h];
+  if (e.direction === 4 || e.direction === 12) [w, h] = [h, w];
+  const x0 = Math.floor(e.position.x - w / 2 + 0.5), y0 = Math.floor(e.position.y - h / 2 + 0.5);
+  return { x0, y0, x1: x0 + w - 1, y1: y0 + h - 1 };
+}
+
+// What the bot makes of a blueprint: the same reading as util/blueprint.lua
+// and ModuleLibrary.report.
+function analyse(blueprint, resource) {
+  const entities = [...(blueprint.entities || [])].sort((a, b) => a.entity_number - b.entity_number);
+  const owner = new Map(), ore = new Set(), errors = [], warnings = [], flows = [];
+  const parts = entities.map((e, i) => {
+    const d = data(e.name);
+    if (d.type === "?") warnings.push(`${e.name}: здание незнакомо странице, нарисовано клеткой 1×1`);
+    const part = { e, d, i: i + 1, kind: d.type, dir: e.direction || 0, tiles: footprint(e) };
+    for (let x = part.tiles.x0; x <= part.tiles.x1; x++)
+      for (let y = part.tiles.y0; y <= part.tiles.y1; y++) owner.set(x + "," + y, part.i);
+    if (d.type === "mining-drill") {
+      const r = d.radius, p = e.position;
+      for (let x = Math.floor(p.x - r); x <= Math.ceil(p.x + r) - 1; x++)
+        for (let y = Math.floor(p.y - r); y <= Math.ceil(p.y + r) - 1; y++) ore.add(x + "," + y);
+    }
+    return part;
+  });
+  const at = ([x, y]) => owner.get(Math.floor(x) + "," + Math.floor(y));
+  const offset = (part, v) => { const [dx, dy] = rotate(v, part.dir); return [part.e.position.x + dx, part.e.position.y + dy]; };
+  const name = i => `${NAMES[parts[i - 1].e.name] || parts[i - 1].e.name} ${i}`;
+
+  // belts: where each hands its items on
+  for (const part of parts) {
+    if (!BELTS.has(part.kind)) continue;
+    const ahead = rotate([0, -1], part.dir);
+    part.next = [];
+    const onto = pos => { const j = at(pos); if (j && j !== part.i && BELTS.has(parts[j - 1].kind)) part.next.push(j); };
+    if (part.kind === "underground-belt" && part.e.type === "input") {
+      for (let d = 1; d <= 6; d++) {
+        const j = at([part.e.position.x + ahead[0] * d, part.e.position.y + ahead[1] * d]);
+        if (j && parts[j - 1].kind === "underground-belt" && parts[j - 1].e.type === "output" && parts[j - 1].dir === part.dir) { part.next.push(j); break; }
+      }
+    } else if (part.kind === "splitter") {
+      const side = rotate([1, 0], part.dir);
+      for (const s of [-0.5, 0.5]) onto([part.e.position.x + side[0] * s + ahead[0], part.e.position.y + side[1] * s + ahead[1]]);
+    } else {
+      onto([part.e.position.x + ahead[0], part.e.position.y + ahead[1]]);
+    }
+  }
+
+  const carries = new Map(), receives = new Map(), takenFrom = new Set();
+  const add = (map, i, it) => { if (!map.has(i)) map.set(i, new Set()); if (map.get(i).has(it)) return false; map.get(i).add(it); return true; };
+  const available = i => {
+    const p = parts[i - 1], out = new Set();
+    if (BELTS.has(p.kind)) for (const it of carries.get(i) || []) out.add(it);
+    else if (p.kind === "furnace") for (const it of receives.get(i) || []) { if (SMELT[it]) out.add(SMELT[it][0]); }
+    else if (p.kind === "container") for (const it of receives.get(i) || []) out.add(it);
+    return out;
+  };
+  const deliver = (i, it) => BELTS.has(parts[i - 1].kind) ? add(carries, i, it) : add(receives, i, it);
+
+  for (const part of parts) {
+    if (part.kind === "mining-drill") {
+      const to = offset(part, part.d.drop), j = at(to);
+      part.into = j;
+      if (!j || j === part.i) errors.push(`${name(part.i)} выбрасывает ${item(resource)} на землю`);
+      else flows.push({ from: [part.e.position.x, part.e.position.y], to, text: `${name(part.i)} → ${name(j)}` });
+    } else if (part.kind === "inserter") {
+      const from = offset(part, part.d.pick), to = offset(part, part.d.put);
+      part.from = at(from); part.to = at(to);
+      if (!part.from || part.from === part.i) errors.push(`${name(part.i)}: неоткуда брать`);
+      else if (!part.to || part.to === part.i) errors.push(`${name(part.i)}: некуда класть`);
+      else { takenFrom.add(part.from); flows.push({ from, to, text: `${name(part.i)}: ${name(part.from)} → ${name(part.to)}` }); }
+    }
+  }
+  for (let changed = true, rounds = 0; changed && rounds < 100; rounds++) {
+    changed = false;
+    for (const part of parts) {
+      if (part.kind === "mining-drill" && part.into && part.into !== part.i) changed = deliver(part.into, resource) || changed;
+      else if (part.kind === "inserter" && part.from && part.to && part.from !== part.to) {
+        for (const it of available(part.from)) {
+          changed = deliver(part.to, it) || changed;
+          if (it === FUEL) changed = add(receives, part.i, it) || changed;
+        }
+      } else if (part.next) {
+        for (const it of carries.get(part.i) || []) for (const j of part.next) changed = add(carries, j, it) || changed;
+      }
+    }
+  }
+
+  const outputs = [], fed = new Set();
+  for (const part of parts) {
+    const items = receives.get(part.i) || new Set();
+    if (part.kind === "furnace") {
+      const made = [...items].filter(it => SMELT[it]).map(it => SMELT[it][0]);
+      if (!made.length) warnings.push(`${name(part.i)} не получает сырья`);
+      else if (!takenFrom.has(part.i)) for (const p of new Set(made)) outputs.push({ building: part.i, item: p, where: "выход печи", room: ECON.stack[p] || 100 });
+    } else if (part.kind === "container") {
+      for (const it of items) outputs.push({ building: part.i, item: it, where: "сундук", room: (ECON.slots[part.e.name] || 16) * (ECON.stack[it] || 50) });
+    } else if (part.kind === "mining-drill" && part.d.burner && items.has(FUEL)) {
+      outputs.push({ building: part.i, item: FUEL, where: "излишек в топливе", room: (ECON.stack[FUEL] || 50) - KEEP_FUEL, fuel: true });
+    }
+    if (part.d.burner && items.has(FUEL)) fed.add(part.i);
+  }
+  for (const part of parts) {
+    if (!part.next) continue;
+    const items = carries.get(part.i);
+    if (!items) warnings.push(`${name(part.i)} ничего не везёт`);
+    else if (!part.next.length) {
+      const taken = parts.some(o => o.kind === "inserter" && o.from && parts[o.from - 1].next && [...items].some(it => (carries.get(o.from) || new Set()).has(it)));
+      if (!taken) warnings.push(`${name(part.i)} кончается, а ${[...items].map(item).join(", ")} с неё никто не берёт`);
+    }
+  }
+  if (!outputs.length) errors.push("продукт негде забрать: нет печи без разгрузки и нет сундука");
+
+  const inputs = [];
+  let started = false;
+  for (const part of parts) {
+    if (!part.d.burner) continue;
+    if (!fed.has(part.i)) inputs.push({ building: part.i, ongoing: true });
+    else if (!started) { started = true; inputs.push({ building: part.i, ongoing: false }); }
+  }
+
+  // rates, as BaseModule:productionRate
+  const time = (GAME.resources[resource] || { time: 1 }).time;
+  const mined = parts.filter(p => p.kind === "mining-drill").reduce((s, p) => s + (p.d.speed || 0) / time, 0);
+  const rates = new Map();
+  let load = null;
+  for (const out of outputs) {
+    if (rates.has(out.item)) continue;
+    const smelt = Object.values(SMELT).find(s => s[0] === out.item);
+    if (out.fuel) {
+      const burnt = parts.filter(p => p.kind === "mining-drill" && p.d.burner).reduce((s, p) => s + (ECON.energy[p.e.name] || 0) / COAL_J, 0);
+      rates.set(out.item, Math.max(mined - burnt, 0) * 60);
+    } else if (out.item === resource) {
+      rates.set(out.item, mined * 60);
+    } else if (smelt) {
+      const capacity = parts.filter(p => p.kind === "furnace").reduce((s, p) => s + (p.d.speed || 1) / smelt[2], 0);
+      const feed = mined / smelt[1];
+      rates.set(out.item, Math.min(capacity, feed) * 60);
+      if (load === null && capacity > 0) load = feed / capacity;
+    }
+  }
+  if (load !== null && load < 0.75) warnings.push(`печи простаивают ${Math.round((1 - load) * 100)} % времени: меньше печей или больше буров`);
+  if (load !== null && load > 1.25) warnings.push(`буры дают на ${Math.round((load - 1) * 100)} % больше, чем плавят печи: больше печей или меньше буров`);
+
+  // cost, upkeep, buffer, score, as ModuleLibrary.report
+  const cost = new Map();
+  const raw = (it, n, depth) => {
+    const r = ECON.recipes[it];
+    if (!r || depth > 8) { cost.set(it, (cost.get(it) || 0) + n); return; }
+    for (const [ing, amount] of Object.entries(r[0])) raw(ing, amount * n / r[1], depth + 1);
+  };
+  for (const p of parts) raw(p.e.name, 1, 0);
+  const costValue = [...cost].reduce((s, [it, n]) => s + n * (ECON.prices[it] || 0), 0);
+  const coal = inputs.filter(x => x.ongoing).reduce((s, x) => s + (ECON.energy[parts[x.building - 1].e.name] || 0) / COAL_J * 60, 0);
+  const value = [...rates].reduce((s, [it, r]) => s + r * (ECON.prices[it] || 0), 0);
+  const score = costValue > 0 ? (value - coal * ECON.prices.coal) / costValue : 0;
+  const outlets = new Map();
+  for (const o of outputs) outlets.set(o.item, (outlets.get(o.item) || 0) + 1);
+  let buffer = Infinity;
+  for (const o of outputs) { const per = (rates.get(o.item) || 0) / outlets.get(o.item); if (per > 0) buffer = Math.min(buffer, o.room / per); }
+
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  const extend = (x, y) => { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); };
+  for (const p of parts) { extend(p.tiles.x0, p.tiles.y0); extend(p.tiles.x1, p.tiles.y1); }
+  for (const k of ore) { const [x, y] = k.split(",").map(Number); extend(x, y); }
+  return { parts, ore, flows, outputs, inputs, rates, load, cost, coal, score, buffer, errors, warnings, name, box: { x0, y0, x1, y1 } };
+}
+
+function oreColor(resource, alpha) {
+  let [r, g, b] = (GAME.resources[resource] || { color: [128, 128, 128] }).color;
+  if (r + g + b < 60) [r, g, b] = [70, 66, 62];
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+let uid = 0;
+function svgMap(a, resource) {
+  const cell = 26, pad = 1, id = "arrow-" + (uid++);
+  const w = (a.box.x1 - a.box.x0 + 1 + pad * 2) * cell, h = (a.box.y1 - a.box.y0 + 1 + pad * 2) * cell;
+  const X = x => (x - a.box.x0 + pad) * cell, Y = y => (y - a.box.y0 + pad) * cell;
+  const out = [];
+  out.push(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" aria-label="Раскладка чертежа">`);
+  out.push(`<defs><marker id="${id}" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--flow)"/></marker></defs>`);
+  for (let x = a.box.x0 - pad; x <= a.box.x1 + pad + 1; x++) out.push(`<line x1="${X(x)}" y1="0" x2="${X(x)}" y2="${h}" stroke="var(--grid)" stroke-width="1"/>`);
+  for (let y = a.box.y0 - pad; y <= a.box.y1 + pad + 1; y++) out.push(`<line x1="0" y1="${Y(y)}" x2="${w}" y2="${Y(y)}" stroke="var(--grid)" stroke-width="1"/>`);
+  for (const k of a.ore) {
+    const [x, y] = k.split(",").map(Number);
+    out.push(`<rect x="${X(x)}" y="${Y(y)}" width="${cell}" height="${cell}" fill="${oreColor(resource, 0.55)}"/>`);
+  }
+  for (const p of a.parts) {
+    const t = p.tiles, color = KIND_COLOR[p.kind] || "var(--other)";
+    const pw = (t.x1 - t.x0 + 1) * cell, ph = (t.y1 - t.y0 + 1) * cell;
+    const belt = BELTS.has(p.kind);
+    out.push(`<rect x="${X(t.x0) + (belt ? 4 : 2)}" y="${Y(t.y0) + (belt ? 4 : 2)}" width="${pw - (belt ? 8 : 4)}" height="${ph - (belt ? 8 : 4)}" rx="3" fill="${color}" fill-opacity="${belt ? 0.75 : 0.9}" stroke="var(--inset)" stroke-width="1"/>`);
+    if (belt) {
+      const [dx, dy] = rotate([0, -1], p.dir), cx = X(t.x0) + pw / 2, cy = Y(t.y0) + ph / 2;
+      out.push(`<path d="M${cx - dy * 5 - dx * 5},${cy + dx * 5 - dy * 5} L${cx + dx * 6},${cy + dy * 6} L${cx + dy * 5 - dx * 5},${cy - dx * 5 - dy * 5}" fill="none" stroke="#fff" stroke-width="2" stroke-opacity="0.85"/>`);
+    } else {
+      const label = pw >= 2 * cell ? NAMES[p.e.name] : SHORT[p.e.name];
+      if (label) out.push(`<text x="${X(t.x0) + pw / 2}" y="${Y(t.y0) + ph / 2 + 4}" text-anchor="middle" font-family="Titillium Web, sans-serif" font-size="12" font-weight="600" fill="#fff">${label}</text>`);
+      if (pw >= 2 * cell) out.push(`<text x="${X(t.x0) + 5}" y="${Y(t.y0) + 13}" font-family="JetBrains Mono, monospace" font-size="9" fill="#fff" fill-opacity="0.85">${p.i}</text>`);
+    }
+  }
+  for (const f of a.flows) {
+    out.push(`<line x1="${X(f.from[0])}" y1="${Y(f.from[1])}" x2="${X(f.to[0])}" y2="${Y(f.to[1])}" stroke="var(--flow)" stroke-width="2.5" marker-end="url(#${id})"/>`);
+  }
+  out.push(`</svg>`);
+  return out.join("");
+}
+
+function factsHtml(a, resource, bestScore) {
+  const width = a.box.x1 - a.box.x0 + 1, height = a.box.y1 - a.box.y0 + 1;
+  const fuel = a.inputs.filter(x => x.ongoing).length;
+  const starters = a.inputs.filter(x => !x.ongoing).map(x => a.name(x.building));
+  const outs = a.outputs.map(o => `${item(o.item)}: ${a.name(o.building)}, ${o.where}`).join("; ") || "—";
+  const rates = [...a.rates].map(([it, r]) => `${item(it)} ${fmt(r)}/мин`).join(", ") || "—";
+  const cost = [...a.cost].sort().map(([it, n]) => `${item(it)} ${Math.round(n * 10) / 10}`).join(", ");
+  const flows = a.flows.filter(f => !/лента \d+ →/.test(f.text));
+  const checks = [
+    ...a.errors.map(t => `<li class="bad">${t}</li>`),
+    ...a.warnings.map(t => `<li class="warn">${t}</li>`),
+  ];
+  if (!checks.length) checks.push(`<li class="good">замечаний нет${a.load ? `, печи загружены на ${Math.round(a.load * 100)} %` : ""}</li>`);
+  const pct = bestScore > 0 ? Math.max(4, Math.min(100, a.score / bestScore * 100)) : 0;
+  return `<dl>
+    <dt>Размер</dt><dd class="num">${width} × ${height} клеток, зданий: ${a.parts.length}${a.ore.size ? `; руды под бурами: ${a.ore.size} клеток (${item(resource)})` : ""}</dd>
+    <dt>Поток</dt><dd>${flows.map(f => f.text).join("; ") || "—"}</dd>
+    <dt>Продукт</dt><dd>${outs}</dd>
+    <dt>Выработка</dt><dd class="num">${rates}</dd>
+    <dt>Стоимость</dt><dd class="num">${cost}</dd>
+    <dt>Топливо</dt><dd class="num">бот заправляет ${fuel} ${fuel === 1 ? "здание" : fuel < 5 && fuel > 0 ? "здания" : "зданий"}, ${fmt(a.coal)} угля/мин${starters.length ? `; только для запуска: ${starters.join(", ")}` : ""}</dd>
+    <dt>Запас</dt><dd class="num">${a.buffer < Infinity ? `выход полон через ${Math.round(a.buffer)} мин` : "—"}</dd>
+    <dt>Оценка</dt><dd class="score num"><b>${fmt(a.score, 3)}</b><span class="score-bar" aria-hidden="true"><i style="width:${pct}%"></i></span></dd>
+    <dt>Проверки</dt><dd><ul class="checks">${checks.join("")}</ul></dd>
+  </dl>`;
+}
+
+let libraryEntries = [], order = "list";
+async function loadLibrary() {
+  libraryEntries = [];
+  for (const m of LIBRARY.modules) {
+    const text = LIBRARY.blueprints[m.blueprint] || m.blueprint;
+    try {
+      const bp = (await decode(text)).blueprint;
+      libraryEntries.push({ m, bp, a: analyse(bp, m.resource) });
+    } catch (e) {
+      libraryEntries.push({ m, error: e.message });
+    }
+  }
+}
+
+function renderLibrary() {
+  const ok = libraryEntries.filter(x => x.a);
+  const best = Math.max(0, ...ok.map(x => x.a.score));
+  const list = [...libraryEntries];
+  if (order === "score") list.sort((x, y) => (y.a ? y.a.score : -1) - (x.a ? x.a.score : -1));
+  document.getElementById("library").innerHTML = list.map(({ m, bp, a, error }) => error
+    ? `<article class="card"><div class="facts"><h3>${m.name}</h3><p class="error">${error}</p></div></article>`
+    : `<article class="card">
+        <div class="map">${svgMap(a, m.resource)}</div>
+        <div class="facts">
+          <div class="title-row"><h3>${m.name}</h3><span class="chip ${m.off ? "" : "on"}">${m.off ? "выключен" : "строится"}</span>
+            <span class="muted">чертёж «${m.blueprint}»${bp.label ? ": " + bp.label : ""}</span></div>
+          ${factsHtml(a, m.resource, best)}
+          <div class="actions"><button data-copy="${m.blueprint}">Скопировать строку</button><span class="copied" hidden>Скопировано</span></div>
+        </div></article>`).join("") || `<p class="muted">Библиотека пуста: запустите <code>node tools/blueprint.js viewer</code>.</p>`;
+}
+
+function renderLegend() {
+  const items = [["var(--drill)", "бур"], ["var(--furnace)", "печь"], ["var(--belt)", "лента"], ["var(--inserter)", "манипулятор (м)"],
+    ["var(--chest)", "сундук (с)"], ["var(--machine)", "автомат, лаборатория"], [oreColor("iron-ore", 0.55), "руда под бурами"], ["var(--flow)", "куда идут предметы"]];
+  document.getElementById("legend").innerHTML = items.map(([c, t]) => `<span><i class="swatch" style="background:${c}"></i>${t}</span>`).join("");
+}
+
+let lastObject = null;
+async function parseInput() {
+  const result = document.getElementById("result"), book = document.getElementById("book");
+  result.innerHTML = ""; book.innerHTML = "";
+  try {
+    lastObject = await decode(document.getElementById("input").value);
+    if (lastObject.blueprint_book) {
+      const list = lastObject.blueprint_book.blueprints || [];
+      book.innerHTML = `<span class="muted">Книга «${lastObject.blueprint_book.label || "без названия"}», чертежей: ${list.length}.</span>` +
+        list.map((b, i) => b.blueprint ? `<button data-book="${i}">${b.blueprint.label || "чертёж " + (i + 1)}</button>` : "").join("");
+      if (list[0] && list[0].blueprint) showBlueprint(list[0].blueprint);
+    } else if (lastObject.blueprint) {
+      showBlueprint(lastObject.blueprint);
+    } else {
+      throw new Error("Это не чертёж: внутри " + Object.keys(lastObject)[0] + ".");
+    }
+  } catch (e) {
+    result.innerHTML = `<p class="error">${e.message}</p>`;
+  }
+}
+
+function showBlueprint(bp) {
+  const resource = document.getElementById("resource").value;
+  const a = analyse(bp, resource);
+  const best = Math.max(a.score, ...libraryEntries.filter(x => x.a).map(x => x.a.score));
+  const list = a.parts.map(p => `${p.i}. ${p.e.name} (${p.e.position.x}, ${p.e.position.y})${p.e.direction ? " направление " + p.e.direction : ""}`).join("<br>");
+  document.getElementById("result").innerHTML = `<article class="card">
+    <div class="map">${svgMap(a, resource)}</div>
+    <div class="facts"><h3>${bp.label || "Чертёж без названия"}</h3>${factsHtml(a, resource, best)}
+      <details><summary>Здания</summary><p class="mono">${list}</p></details></div></article>`;
+}
+
+document.addEventListener("click", async e => {
+  const copy = e.target.closest("[data-copy]");
+  if (copy) {
+    const text = LIBRARY.blueprints[copy.dataset.copy];
+    const done = copy.nextElementSibling;
+    try { await navigator.clipboard.writeText(text); }
+    catch (err) { const buf = document.getElementById("copy-buffer"); buf.value = text; buf.select(); document.execCommand && document.execCommand("copy"); }
+    done.hidden = false; setTimeout(() => { done.hidden = true; }, 1500);
+  }
+  const page = e.target.closest("[data-book]");
+  if (page && lastObject && lastObject.blueprint_book) showBlueprint(lastObject.blueprint_book.blueprints[+page.dataset.book].blueprint);
+  if (e.target.id === "order-list" || e.target.id === "order-score") {
+    order = e.target.id === "order-score" ? "score" : "list";
+    document.getElementById("order-list").setAttribute("aria-pressed", String(order === "list"));
+    document.getElementById("order-score").setAttribute("aria-pressed", String(order === "score"));
+    renderLibrary();
+  }
+});
+document.getElementById("parse").addEventListener("click", parseInput);
+document.getElementById("resource").addEventListener("change", () => { if (lastObject) parseInput(); });
+
+renderLegend();
+loadLibrary().then(() => {
+  renderLibrary();
+  // a working example in the paste box: the belt line
+  const example = LIBRARY.blueprints["belt-line"] || LIBRARY.blueprints["furnace-chest"];
+  if (example) { document.getElementById("input").value = example; parseInput(); }
+});
+</script>

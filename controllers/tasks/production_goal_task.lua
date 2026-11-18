@@ -11,6 +11,8 @@ require 'controllers/modules/library'
   item, then looks again, so a goal larger than one module builds several.
    - item: string; what to make
    - per_minute: number; how much
+   - growth: boolean; (optional) set by GrowthTask: with /aimod-use best the
+     module with the best score, not the cheapest that covers the goal
 ]]
 ProductionGoalTask = Task:new()
 local log = Logger.makeLogger("ProductionGoalTask");
@@ -54,8 +56,16 @@ function ProductionGoalTask:needs(args)
   if(self.failed or self.building or self:achieved(args)) then
     return nil;
   end
-  local module = ModuleLibrary.producer(args.player, self.item);
+  local module = ModuleLibrary.producer(args.player, self.item, nil, self:shortfall(args.player));
   return module and BuildModuleTask:new{module=module}:needs(args) or nil;
+end
+
+-- Items a minute still missing, for ModuleLibrary.producer; nil for growth.
+function ProductionGoalTask:shortfall(player)
+  if(self.growth) then
+    return nil;
+  end
+  return self.per_minute - ProductionGoalTask.rate(player, self.item);
 end
 
 function ProductionGoalTask:tick(args)
@@ -71,7 +81,7 @@ function ProductionGoalTask:tick(args)
       return;
     end
   end
-  local module = ModuleLibrary.producer(player, self.item);
+  local module = ModuleLibrary.producer(player, self.item, nil, self.per_minute - rate > EPSILON and not self.growth and self.per_minute - rate or nil);
   if(not module) then
     self:fail(player, "no module to make " .. self.item .. " (" .. string.format("%.1f", rate) ..
       " of " .. self.per_minute .. "/min)");

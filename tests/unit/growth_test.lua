@@ -52,14 +52,14 @@ T.describe("GrowthTask", function()
   T.it("then the product furthest behind its share", function()
     built(BurnerToFurnaceModule, "iron-ore", 0)
     built(BurnerToBurnerModule, "coal", 10)
-    T.eq(next_product(), "copper-plate", "copper 0 of 1 before bricks 0 of 0.5")
+    T.eq(next_product(), "copper-plate", "copper 0 of 1 before iron 15 of 2")
   end)
 
   T.it("skips what it gave up on", function()
     built(BurnerToFurnaceModule, "iron-ore", 0)
     built(BurnerToBurnerModule, "coal", 10)
     storage.failed_goals = { [1] = { "BurnerToFurnaceCopper" } }
-    T.eq(next_product(), "stone-brick", "bricks")
+    T.eq(next_product(), "iron-plate", "iron, no bricks")
   end)
 
   T.it("refuels a module first, both buildings in one trip", function()
@@ -99,7 +99,7 @@ T.describe("GrowthTask", function()
 
   T.it("stops when no module can be added", function()
     storage.goals_done = { [1] = true }
-    storage.failed_goals = { [1] = { "BurnerToFurnace", "BurnerToFurnaceCopper", "BurnerToFurnaceStone", "BurnerToBurner" } }
+    storage.failed_goals = { [1] = { "BurnerToFurnace", "BurnerToFurnaceCopper", "StonePairFurnace", "BurnerToFurnaceStone", "BurnerToBurner" } }
     local growth = GrowthTask:new{}
     machine:pushSingle(growth)
     growth:tick{ player = player, machine = machine }

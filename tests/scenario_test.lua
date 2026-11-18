@@ -264,6 +264,17 @@ script.on_event(defines.events.on_tick, function(event)
     t.goals_checked = true
     -- `peaceful` (run-headless.ps1 -Peaceful): biters attack only when attacked,
     -- to measure long growth runs apart from defence (plan item 1.5)
+    -- `modules:A+B` (run-headless.ps1 -Modules "A,B"): the modules the bot builds, as /aimod-use
+    local chosen = (script.test_arg or ""):match("modules:([%w%-%+]+)")
+    if chosen then
+      local names = {}
+      for name in chosen:gmatch("[^+]+") do names[#names + 1] = name end
+      if chosen == "best" then names = "best" end
+      local unknown = ModuleLibrary.choose(names)
+      local using = {}
+      for _, module in ipairs(ModuleLibrary.all()) do using[#using + 1] = module.name end
+      log("[test] modules: " .. (unknown and ("NO MODULE " .. unknown) or table.concat(using, ", ")))
+    end
     if test_flag("peaceful") then
       for _, surface in pairs(game.surfaces) do surface.peaceful_mode = true end
       log("[test] peaceful mode")

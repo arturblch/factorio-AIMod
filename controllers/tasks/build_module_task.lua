@@ -7,6 +7,7 @@ require 'controllers/managers/module_resource_source'
 require 'util/inventories'
 require 'util/recipes'
 require 'controllers/modules/library'
+require 'controllers/modules/plan'
 
 --[[
   BuildModuleTask
@@ -29,7 +30,12 @@ function BuildModuleTask:achieved (args)
   if(self.failed) then
     return true;
   end
-  return self.built ~= nil and self.built:allPlaced();
+  local done = self.built ~= nil and self.built:allPlaced();
+  if(done and self.plan) then
+    ModulePlan.clear(self.plan);
+    self.plan = nil;
+  end
+  return done;
 end
 
 -- Remembers a module that couldn't be built, for the final message.
@@ -41,6 +47,8 @@ local function record_failure(player, name)
 end
 
 function BuildModuleTask:fail(player, message)
+  ModulePlan.clear(self.plan);
+  self.plan = nil;
   log(message, "WARN");
   player.print("AIMod: " .. message);
   record_failure(player, self.module.name);
@@ -59,6 +67,8 @@ function BuildModuleTask:retryElsewhere(player)
     end
   end
   storage.resource_managers[player.index]:unregister_source(self.source);
+  ModulePlan.clear(self.plan);
+  self.plan = nil;
   self.bad_spots = self.bad_spots or {};
   self.bad_spots[#self.bad_spots + 1] = self.location;
   self.attempts = (self.attempts or 0) + 1;
@@ -288,6 +298,8 @@ function BuildModuleTask:tick (args)
       return;
     end
     log("Building " .. self.module.name .. " at " .. self.location.x .. ", " .. self.location.y, "INFO");
+    -- show the player what is about to stand there
+    self.plan = ModulePlan.draw(self.module, self.location, player.surface);
   end
 
   -- get the buildings first, the spot is reserved in self.location
@@ -303,7 +315,11 @@ function BuildModuleTask:tick (args)
     if(inv_count < count) then
       local required_count = count - inv_count;
       log("We require " .. required_count .. " more " .. type .. " for this module", "INFO");
-      args.machine:pushSingle(CraftRecipeTask:new{recipe=type, qty=required_count, background=true});
+      -- qty counts crafts: a belt craft makes two
+      local recipe = prototypes.recipe[type];
+      local per_craft = recipe and Recipes.product_amount(recipe, type) or 1;
+      local crafts = math.ceil(required_count / math.max(per_craft, 1));
+      args.machine:pushSingle(CraftRecipeTask:new{recipe=type, qty=crafts, background=true});
       missing = true;
     end
   end
