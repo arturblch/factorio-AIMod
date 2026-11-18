@@ -4,12 +4,13 @@ require 'controllers/tasks/wait_for_output_task'
 require 'controllers/tasks/gatherResourcesTask'
 
 --[[
-  BaseModule: a small fixed layout of buildings (see burner_to_furnace.lua).
+  BaseModule: a small fixed layout of buildings, made from a blueprint
+  (blueprints/library.lua, util/blueprint.lua).
    - buildings[i].entity is set by PlaceBuildingTask once the building stands
    - inputs: {building=i, type="coal", slot="fuel"} - fuel the bot keeps topped up
    - outputs: {building=i, type="iron-plate", slot="output"|"fuel", keep=n}
-       slot "output" (default) is the building's result inventory; slot
-       "fuel" takes surplus fuel, leaving `keep` items behind
+       slot "output" (default) is the building's result inventory (a chest's
+       own inventory); slot "fuel" takes surplus fuel, leaving `keep` behind
 ]]
 BaseModule = {}
 
@@ -66,6 +67,9 @@ local function output_inventory(entity, output)
   if(output.slot == "fuel") then
     return entity.get_fuel_inventory();
   end
+  if(entity.type == "container") then
+    return entity.get_inventory(defines.inventory.chest);
+  end
   return entity.get_output_inventory();
 end
 
@@ -89,6 +93,22 @@ function BaseModule:outputCount(product)
   local total = 0;
   for i, output in ipairs(self:outputsForProduct(product)) do
     total = total + output.available;
+  end
+  return total;
+end
+
+-- The most of `product` the outputs can hold at once for the bot (beyond
+-- what each keeps): a pair of coal drills holds 2 x 45, so waiting for 94
+-- coal there would never end.
+function BaseModule:outputCapacity(product)
+  local total = 0;
+  for i, output in ipairs(self.outputs) do
+    local entity = self:entity(output.building);
+    local inventory = output.type == product and entity and output_inventory(entity, output);
+    if(inventory) then
+      local room = inventory.get_item_count(product) + inventory.get_insertable_count(product) - (output.keep or 0);
+      total = total + math.max(room, 0);
+    end
   end
   return total;
 end
@@ -187,13 +207,26 @@ function BaseModule:productionRate(product)
     inputs[#inputs + 1] = item;
   end
   table.sort(inputs);
-  local capacity, feed, fuel_output = 0, 0, false;
+  local fuel_output, smelted, raw = false, false, false;
   for i, output in ipairs(self.outputs) do
     if(output.type == product) then
       if(output.slot == "fuel") then
         fuel_output = true;
+      elseif(prototypes.entity[self.buildings[output.building].type].type == "container" and mined[product]) then
+        raw = true; -- a drill fills a chest
       else
-        local machine = prototypes.entity[self.buildings[output.building].type];
+        smelted = true; -- a furnace's result slot, or a chest an inserter fills from it
+      end
+    end
+  end
+  if(raw) then
+    return mined[product];
+  end
+  local capacity, feed = 0, 0;
+  if(smelted) then
+    for i, building in ipairs(self.buildings) do
+      local machine = prototypes.entity[building.type];
+      if(machine.type == "furnace" or machine.type == "assembling-machine") then
         local key = machine.name .. "|" .. product .. "|" .. table.concat(inputs, ",");
         local cached = recipe_cache[key];
         if(not cached) then
@@ -219,6 +252,50 @@ function BaseModule:productionRate(product)
     return math.max((mined[product] or 0) - burnt, 0);
   end
   return 0;
+end
+
+-- What the drills feed the furnaces over what the furnaces can smelt, for
+-- the first smelted output (1 = balanced, below = idle furnaces, above =
+-- drills waiting); nil when the module smelts nothing.
+function BaseModule:smeltingLoad()
+  local mined = {};
+  for i, building in ipairs(self.buildings) do
+    local rate, item = drill_rate(self, building);
+    if(item) then
+      mined[item] = (mined[item] or 0) + rate;
+    end
+  end
+  for i, output in ipairs(self.outputs) do
+    local capacity, feed = 0, 0;
+    for j, building in ipairs(self.buildings) do
+      local machine = prototypes.entity[building.type];
+      if(machine.type == "furnace") then
+        local recipe, ingredient, needed, made = machine_recipe(machine, output.type, mined);
+        if(recipe) then
+          capacity = capacity + machine.get_crafting_speed() / recipe.energy * made;
+          feed = (mined[ingredient] or 0) / needed * made;
+        end
+      end
+    end
+    if(capacity > 0) then
+      return feed / capacity;
+    end
+  end
+  return nil;
+end
+
+-- Items of `fuel` per second the module needs brought to it while it works:
+-- what its bot-fueled burners take at full work. A module that feeds
+-- itself (BurnerToBurner) needs none; its own burning is already taken off
+-- its productionRate.
+function BaseModule:fuelUse(fuel)
+  local total = 0;
+  for i, input in ipairs(self.inputs) do
+    if(input.slot == "fuel" and input.type == fuel and input.ongoing ~= false) then
+      total = total + fuel_burn_rate(self.buildings[input.building], fuel);
+    end
+  end
+  return total;
 end
 
 -- A fuel input that has burnt out: nothing in the slot, nothing burning.
@@ -295,6 +372,9 @@ end
 -- WaitForOutputTask.
 function BaseModule:generateTasksForOutput(product, qty, total)
   local tasks = self:fuelTasks();
+  -- no more than the outputs hold: the rest comes on the next round, as the
+  -- task that asked plans again while it has too few
+  qty = math.min(qty, self:outputCapacity(product));
   if(self:outputCount(product) < qty) then
     tasks[#tasks + 1] = WaitForOutputTask:new{module=self, type=product, qty=qty, total=total};
   end

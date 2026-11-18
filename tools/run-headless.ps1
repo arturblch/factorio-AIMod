@@ -59,7 +59,16 @@ param(
   [string]$Goals,
   # also print the production score (util/production_score.lua): after every
   # snapshot, and the last one per seed and in total
-  [switch]$Score
+  [switch]$Score,
+  # let the bot play on after its goals (GrowthTask) until -Ticks, and report
+  # the modules it built and the score instead of the time it took
+  [switch]$Grow,
+  # peaceful mode: biters attack only when attacked (long -Grow runs draw
+  # attacks with their pollution after ~15 minutes)
+  [switch]$Peaceful,
+  # the modules the bot builds, best first, by name from blueprints/library.lua
+  # (as /aimod-use in game), e.g. "IronToChest,BurnerToFurnaceCopper,BurnerToBurner"
+  [string]$Modules
 )
 $ErrorActionPreference = "Stop"
 $repo = Split-Path -Parent $PSScriptRoot
@@ -177,7 +186,10 @@ foreach ($s in ($Seed -split ',' | ForEach-Object { [uint32]$_.Trim() })) {
   $flags = @()
   if ($CursorNoise) { $flags += "cursor-noise" }
   if ($FullInventory) { $flags += "full-inventory" }
-  if ($Score) { $flags += "score" }
+  if ($Score -or $Grow) { $flags += "score" }
+  if ($Grow) { $flags += "grow:$($Ticks - 60)" }
+  if ($Peaceful) { $flags += "peaceful" }
+  if ($Modules) { $flags += "modules:" + (($Modules -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ }) -join '+') }
   foreach ($g in ($Goals -split ',' | Where-Object { $_.Trim() })) {
     $g = $g.Trim()
     $flags += $(if ($g -like "have:*") { $g } else { "goal:$g" })
@@ -222,7 +234,7 @@ foreach ($s in ($Seed -split ',' | ForEach-Object { [uint32]$_.Trim() })) {
     $why = @($explained + $errors + "exit code $($p.ExitCode)")[0]
     $runs.Add([pscustomobject]@{ Seed = $s; Result = "FAILED: $why"; Ticks = $null; Score = $points })
   } elseif ($completed) {
-    $extra = @($test | Where-Object { $_ -match '^cursor noise|^full inventory' })
+    $extra = @($test | Where-Object { $_ -match '^cursor noise|^full inventory|^modules:' })
     Write-Host ((@("seed ${s}: OK, $completed") + $extra + $scoreNote | Where-Object { $_ }) -join "; ") -ForegroundColor Green
     $ticksTaken = if ($completed -match 't=(\d+)') { [int]$Matches[1] } else { $null }
     $runs.Add([pscustomobject]@{ Seed = $s; Result = "OK"; Ticks = $ticksTaken; Score = $points })
@@ -241,15 +253,17 @@ $mode = "scenario"
 if ($CursorNoise) { $mode += " -CursorNoise" }
 if ($FullInventory) { $mode += " -FullInventory" }
 if ($Score) { $mode += " -Score" }
+if ($Grow) { $mode += " -Grow" }
+if ($Peaceful) { $mode += " -Peaceful" }
 $tally = "$($ok.Count) of $($runs.Count) seeds completed, $(if ($total) { $total } else { 0 }) ticks in total"
 # the score of every seed, completed or not
-if ($Score) { $tally += ", score $(($runs | Measure-Object -Property Score -Sum).Sum) in total" }
+if ($Score -or $Grow) { $tally += ", score $(($runs | Measure-Object -Property Score -Sum).Sum) in total" }
 if ($runs.Count -gt 1) { Write-Host $tally -ForegroundColor $(if ($failed -gt 0) { "Red" } else { "Green" }) }
 foreach ($r in $runs) { if ($r.Result -ne "OK") { Write-Annotation "$mode seed $($r.Seed)" $r.Result } }
-$header = if ($Score) { @("| seed | result | ticks | score |", "|---:|---|---:|---:|") } else { @("| seed | result | ticks |", "|---:|---|---:|") }
+$header = if ($Score -or $Grow) { @("| seed | result | ticks | score |", "|---:|---|---:|---:|") } else { @("| seed | result | ticks |", "|---:|---|---:|") }
 Write-JobSummary (@("### $mode", "", $tally, "") + $header +
   @($runs | ForEach-Object {
-    "| $($_.Seed) | $($_.Result -replace '\|', '/') | $($_.Ticks) |" + $(if ($Score) { " $($_.Score) |" } else { "" })
+    "| $($_.Seed) | $($_.Result -replace '\|', '/') | $($_.Ticks) |" + $(if ($Score -or $Grow) { " $($_.Score) |" } else { "" })
   }) + "")
 
 if (-not $Brief) { Write-Host "Full logs: $WorkDir" }

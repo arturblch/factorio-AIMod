@@ -7,6 +7,7 @@ require 'controllers/managers/module_resource_source'
 require 'util/inventories'
 require 'util/recipes'
 require 'controllers/modules/library'
+require 'controllers/modules/plan'
 
 --[[
   BuildModuleTask
@@ -29,7 +30,12 @@ function BuildModuleTask:achieved (args)
   if(self.failed) then
     return true;
   end
-  return self.built ~= nil and self.built:allPlaced();
+  local done = self.built ~= nil and self.built:allPlaced();
+  if(done and self.plan) then
+    ModulePlan.clear(self.plan);
+    self.plan = nil;
+  end
+  return done;
 end
 
 -- Remembers a module that couldn't be built, for the final message.
@@ -41,6 +47,8 @@ local function record_failure(player, name)
 end
 
 function BuildModuleTask:fail(player, message)
+  ModulePlan.clear(self.plan);
+  self.plan = nil;
   log(message, "WARN");
   player.print("AIMod: " .. message);
   record_failure(player, self.module.name);
@@ -59,6 +67,8 @@ function BuildModuleTask:retryElsewhere(player)
     end
   end
   storage.resource_managers[player.index]:unregister_source(self.source);
+  ModulePlan.clear(self.plan);
+  self.plan = nil;
   self.bad_spots = self.bad_spots or {};
   self.bad_spots[#self.bad_spots + 1] = self.location;
   self.attempts = (self.attempts or 0) + 1;
@@ -241,18 +251,55 @@ function BuildModuleTask:canBuildAtPosition(player, position)
   return self:drillsMineOnlyTheirResource(player.surface, corner);
 end
 
--- Center of the module's geometry tile (0, 0), or nil.
+-- The module's first ore tile (top row first), relative to geometry tile
+-- (0, 0): a found ore tile is tried as this one, so only the drills have to
+-- stand on ore. A module whose corner is a furnace (the column FF|DDDD|FF)
+-- otherwise needed ore two tiles wider than its drills.
+function BuildModuleTask.anchor(module)
+  local best;
+  for i, tile in ipairs(module.geometry) do
+    local p = tile.position;
+    if(tile.resource and (not best or p.y < best.y or (p.y == best.y and p.x < best.x))) then
+      best = p;
+    end
+  end
+  return best or {x=0, y=0};
+end
+
+-- Where to look for a spot: next to the nearest module of ours on the same
+-- resource, so that modules go in rows along the patch instead of wherever
+-- the player stands (shorter rounds to fuel and empty them); else around the
+-- player.
+function BuildModuleTask:searchOrigin(player)
+  local manager = storage.resource_managers[player.index];
+  local best, best_distance;
+  for i, source in ipairs(manager and manager.sources or {}) do
+    local module = source.module;
+    local entity = module and module.resource == self.module.resource and module:entity(1);
+    if(entity) then
+      local distance = util.distance(player.position, entity.position);
+      if(not best_distance or distance < best_distance) then
+        best, best_distance = entity.position, distance;
+      end
+    end
+  end
+  return best or player.position;
+end
+
+-- Center of the module's geometry tile (0, 0), or nil: the spot nearest the
+-- search origin where it fits.
 function BuildModuleTask:findLocation(player)
-  local origin = player.position;
+  local origin = self:searchOrigin(player);
+  local anchor = BuildModuleTask.anchor(self.module);
   for i, radius in ipairs(SEARCH_RADII) do
     local resources = player.surface.find_entities_filtered{position=origin, radius=radius, name=self.module.resource}
     table.sort(resources, function(a, b)
       return util.distance(origin, a.position) < util.distance(origin, b.position);
     end)
     for j, resource in ipairs(resources) do
-      local position = resource.position;
+      local position = {x=resource.position.x - anchor.x, y=resource.position.y - anchor.y};
       if(not self:isBadSpot(position) and self:canBuildAtPosition(player, position)) then
-        return {x=position.x, y=position.y};
+        return position;
       end
     end
   end
@@ -288,6 +335,8 @@ function BuildModuleTask:tick (args)
       return;
     end
     log("Building " .. self.module.name .. " at " .. self.location.x .. ", " .. self.location.y, "INFO");
+    -- show the player what is about to stand there
+    self.plan = ModulePlan.draw(self.module, self.location, player.surface);
   end
 
   -- get the buildings first, the spot is reserved in self.location
@@ -303,7 +352,11 @@ function BuildModuleTask:tick (args)
     if(inv_count < count) then
       local required_count = count - inv_count;
       log("We require " .. required_count .. " more " .. type .. " for this module", "INFO");
-      args.machine:pushSingle(CraftRecipeTask:new{recipe=type, qty=required_count, background=true});
+      -- qty counts crafts: a belt craft makes two
+      local recipe = prototypes.recipe[type];
+      local per_craft = recipe and Recipes.product_amount(recipe, type) or 1;
+      local crafts = math.ceil(required_count / math.max(per_craft, 1));
+      args.machine:pushSingle(CraftRecipeTask:new{recipe=type, qty=crafts, background=true});
       missing = true;
     end
   end

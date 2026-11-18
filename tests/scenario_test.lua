@@ -113,6 +113,30 @@ end
   goal:<item>:<n> is a ProductionGoalTask (n per minute), have:<item>:<n> a
   GatherResourceTask (n in the inventory), kept in the given order.
 ]]
+--[[
+  Growth (`--test-arg grow:<tick>`, run-headless.ps1 -Grow): the bot plays on
+  after its goals (GrowthTask, appended to goals given with -Goals) and the
+  run ends at <tick>, with the modules built, their rates and the score.
+]]
+local grow_until = tonumber((script.test_arg or ""):match("grow:(%d+)"))
+
+local function module_summary(player)
+  local counts, parts, rates = {}, {}, {}
+  local manager = storage.resource_managers and storage.resource_managers[1]
+  for _, source in ipairs(manager and manager.sources or {}) do
+    if source.module then
+      local name = source.module.name .. (source:is_valid() and "" or "(broken)")
+      counts[name] = (counts[name] or 0) + 1
+    end
+  end
+  for name, n in pairs(counts) do parts[#parts + 1] = name .. "=" .. n end
+  table.sort(parts)
+  for _, item in ipairs({ "iron-plate", "copper-plate", "stone-brick", "coal" }) do
+    rates[#rates + 1] = item .. "=" .. string.format("%.1f", ProductionGoalTask.rate(player, item))
+  end
+  return "modules: " .. table.concat(parts, " ") .. " | per minute: " .. table.concat(rates, " ")
+end
+
 local function goal_flags()
   local goals = {}
   for kind, item, n in (script.test_arg or ""):gmatch("(%a+):([%w%-]+):([%d%.]+)") do
@@ -238,8 +262,26 @@ script.on_event(defines.events.on_tick, function(event)
   local machine = storage.goal_machines and storage.goal_machines[1]
   if machine and not t.goals_checked then
     t.goals_checked = true
+    -- `peaceful` (run-headless.ps1 -Peaceful): biters attack only when attacked,
+    -- to measure long growth runs apart from defence (plan item 1.5)
+    -- `modules:A+B` (run-headless.ps1 -Modules "A,B"): the modules the bot builds, as /aimod-use
+    local chosen = (script.test_arg or ""):match("modules:([%w%-%+]+)")
+    if chosen then
+      local names = {}
+      for name in chosen:gmatch("[^+]+") do names[#names + 1] = name end
+      if chosen == "best" then names = "best" end
+      local unknown = ModuleLibrary.choose(names)
+      local using = {}
+      for _, module in ipairs(ModuleLibrary.all()) do using[#using + 1] = module.name end
+      log("[test] modules: " .. (unknown and ("NO MODULE " .. unknown) or table.concat(using, ", ")))
+    end
+    if test_flag("peaceful") then
+      for _, surface in pairs(game.surfaces) do surface.peaceful_mode = true end
+      log("[test] peaceful mode")
+    end
     local goals = goal_flags()
     if #goals > 0 then
+      if grow_until then goals[#goals + 1] = GrowthTask:new{} end
       machine.goals = nil
       machine:pushStart(goals)
       log("[test] goals replaced: " .. describe_stack(machine))
@@ -278,9 +320,28 @@ script.on_event(defines.events.on_tick, function(event)
   if event.tick % SNAPSHOT_EVERY == 0 then
     snapshot(event.tick, player, machine)
     log_score(player)
+    if grow_until then log("[test]   " .. module_summary(player)) end
     if not check_storage(event.tick) then return end
   end
-  if storage.goals_done and storage.goals_done[1] and not t.completed then
+  if grow_until and event.tick >= grow_until and not t.completed then
+    t.completed = true
+    snapshot(event.tick, player, machine)
+    log_score(player)
+    log("[test] " .. module_summary(player))
+    local failed = storage.failed_goals and storage.failed_goals[1] or {}
+    if #failed > 0 then log("[test]   gave up on: " .. table.concat(failed, ", ")) end
+    if (t.deaths or 0) > 0 then
+      log("[test] DIED " .. t.deaths .. " times")
+      script.finish_test(false)
+    elseif (t.unintended or 0) > 0 then
+      log("[test] MINED THE WRONG THING " .. t.unintended .. " times (cursor noise)")
+      script.finish_test(false)
+    else
+      log("[test] COMPLETED at t=" .. event.tick)
+      if check_storage(event.tick) then script.finish_test(true) end
+    end
+  end
+  if not grow_until and storage.goals_done and storage.goals_done[1] and not t.completed then
     t.completed = true
     local failed = storage.failed_goals and storage.failed_goals[1] or {}
     snapshot(event.tick, player, machine)

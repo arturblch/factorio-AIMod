@@ -21,8 +21,9 @@ function Recipes.product_amount(recipe, item)
   return 0;
 end
 
-function Recipes.is_handcraftable(recipe)
-  if(not (recipe.enabled and recipe.has_category("crafting"))) then
+-- `locked_too`: whether it could be hand-crafted once unlocked.
+function Recipes.is_handcraftable(recipe, locked_too)
+  if(not ((locked_too or recipe.enabled) and recipe.has_category("crafting"))) then
     return false;
   end
   for i, ingredient in pairs(recipe.ingredients) do

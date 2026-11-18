@@ -123,6 +123,27 @@ T.describe("BuildModuleTask:tick", function()
     T.same(task.location, { x = 5.5, y = 0.5 }, "location")
   end)
 
+  T.it("puts only the drills on ore", function()
+    -- the column FF|DDDD|FF: furnaces at x 0..1 and 6..7, drills on 2..5
+    Lab.patch("iron-ore", 12, 0, 15, 3)
+    player = Fakes.player{ surface = Lab.surface(), position = { x = 14, y = 2 } }
+    local task = BuildModuleTask:new{ module = ModuleLibrary.get("IronColumn4") }
+    T.same(BuildModuleTask.anchor(task.module), { x = 2, y = 0 }, "the first drill's ore")
+    T.same(task:findLocation(player), { x = 10.5, y = 0.5 }, "furnaces off the 4x4 patch")
+  end)
+
+  T.it("builds next to a module on the same ore, not where the player is", function()
+    Lab.patch("iron-ore", 0, 0, 29, 1)
+    local module = BurnerToFurnaceModule:instantiate()
+    for _, building in ipairs(module.buildings) do
+      building.entity = Lab.entity(building.type, { 20 + building.position.x, building.position.y })
+    end
+    manager:register_source(ModuleResourceSource:new{ module = module })
+    player = Fakes.player{ surface = Lab.surface(), position = { x = 2, y = 0 } }
+    local spot = BuildModuleTask:new{ module = BurnerToFurnaceModule }:findLocation(player)
+    T.truthy(spot.x >= 14 and spot.x <= 26, "beside the one at 20..23: " .. spot.x)
+  end)
+
   T.it("builds on the grid, then fuels the module and registers it", function()
     iron_spot(10, 20)
     player = Fakes.player{ surface = Lab.surface(), position = { x = 10, y = 18 },

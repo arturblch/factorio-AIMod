@@ -5,6 +5,7 @@ require 'ground_resource_source'
 require 'tree_resource_source'
 require 'craft_resource_source'
 require 'build_module_resource_source'
+require 'research_resource_source'
 require 'controllers/modules/library'
 
 --[[
@@ -14,8 +15,11 @@ require 'controllers/modules/library'
       (ore, trees, rocks),
    3. hand-crafting,
    4. a built module that first needs fuel / time to produce it,
-   5. building a module from ModuleLibrary that makes it (not for optional
-      gathers: fetching things early must not start a building project).
+   5. researching the technology that unlocks its recipe, when research
+      triggers do it (make 50 iron plates for pipes),
+   6. building a module from ModuleLibrary that makes it.
+  5 and 6 not for optional gathers: fetching things early must not start
+  a project.
   Natural sources are looked up on demand, so depleted ore and felled trees
   never linger in a list.
 ]]
@@ -116,9 +120,19 @@ function ResourceManager:find_natural_source(player, type)
   return nil;
 end
 
+-- A module with a building the bot just failed to walk to.
+local function out_of_reach(source)
+  for i, building in ipairs(source.module and source.module.buildings or {}) do
+    if(building.entity and building.entity.valid and Unreachable.is(building.entity, Unreachable.BUILDING_TICKS)) then
+      return true;
+    end
+  end
+  return false;
+end
+
 function ResourceManager:module_source(type, ready_only)
   for i, source in ipairs(self.sources) do
-    if(source:is_valid() and source:provides_type(type)) then
+    if(source:is_valid() and source:provides_type(type) and not out_of_reach(source)) then
       if(not ready_only or source:has_output(type)) then
         return source;
       end
@@ -144,7 +158,13 @@ function ResourceManager:best_resource_source(player, type, optional, machine)
   if(source or optional) then
     return source;
   end
-  local module = ModuleLibrary.producer(player, type, ModuleLibrary.being_built(machine));
+  local research = ResearchResourceSource:new{player=player};
+  if(research:provides_type(type)) then
+    return research;
+  end
+  -- needed 0: the cheapest module that makes any, to have the items soon
+  -- (more a minute is GrowthTask's business)
+  local module = ModuleLibrary.producer(player, type, ModuleLibrary.being_built(machine), 0);
   return module and BuildModuleResourceSource:new{module=module} or nil;
 end
 

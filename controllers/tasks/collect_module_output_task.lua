@@ -33,7 +33,8 @@ function CollectModuleOutputTask:tick (args)
     if(wanted <= 0) then
       break;
     end
-    if(output.available > 0) then
+    -- one the bot just failed to walk to: skipped, the gather task above looks elsewhere
+    if(output.available > 0 and not Unreachable.is(output.entity, Unreachable.BUILDING_TICKS)) then
       if(not player.can_reach_entity(output.entity)) then
         args.machine:pushSingle(MoveToPointTask.next_to(output.entity));
         return;

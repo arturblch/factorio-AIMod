@@ -1,0 +1,6 @@
+{"blueprint": {"label": "Burner drill into a wooden chest", "item": "blueprint",
+  "icons": [{"signal": {"name": "burner-mining-drill"}, "index": 1}, {"signal": {"name": "wooden-chest"}, "index": 2}],
+  "entities": [
+    {"entity_number": 1, "name": "burner-mining-drill", "position": {"x": 1, "y": 1}, "direction": 4},
+    {"entity_number": 2, "name": "wooden-chest", "position": {"x": 2.5, "y": 0.5}}
+  ]}}
