@@ -79,6 +79,34 @@ T.describe("Blueprint.module", function()
     }, "outputs")
   end)
 
+  T.it("a ring of coal drills is fueled once, to start", function()
+    local module = module_of("coal-ring4", "coal", "coal")
+    T.eq(#module.geometry, 16, "a 4x4 patch")
+    for _, tile in ipairs(module.geometry) do T.eq(tile.resource, "coal", "all coal") end
+    T.same(module.inputs, { { building = 1, type = "coal", slot = "fuel", ongoing = false } }, "only the first")
+    T.eq(#module.outputs, 4, "every drill's fuel")
+    for _, output in ipairs(module.outputs) do T.eq(output.slot, "fuel", "fuel slot") end
+    local ring = BaseModule:new(module):productionRate("coal")
+    local pair = BaseModule:new(module_of("coal-pair", "coal", "coal")):productionRate("coal")
+    T.near(ring, 2 * pair, 1e-9, "twice a pair")
+  end)
+
+  T.it("a column is pairs of drill and furnace", function()
+    local column = BaseModule:new(module_of("furnace-column4", "iron-ore", "iron-plate"))
+    local pair = BaseModule:new(module_of("burner-furnace", "iron-ore", "iron-plate"))
+    T.near(column:productionRate("iron-plate"), 4 * pair:productionRate("iron-plate"), 1e-9, "four pairs")
+    T.eq(#column.inputs, 8, "every building fueled")
+    T.eq(#column.outputs, 4, "a furnace each")
+    local ore = 0
+    for _, tile in ipairs(column.geometry) do
+      if(tile.resource) then ore = ore + 1 end
+    end
+    T.eq(ore, 16, "ore only under the drills")
+    T.eq(#column.geometry, 32, "8x4 tiles")
+    local eight = BaseModule:new(module_of("furnace-column8", "copper-ore", "copper-plate"))
+    T.near(eight:productionRate("copper-plate"), 8 * pair:productionRate("iron-plate"), 1e-9, "eight pairs")
+  end)
+
   T.it("follows an inserter from the furnace into a chest", function()
     local module = module_of("furnace-chest", "iron-ore", "iron-plate")
     T.same(module.outputs, { { building = 4, type = "iron-plate", slot = "output" } }, "the chest")
@@ -122,7 +150,8 @@ T.describe("ModuleLibrary from blueprints", function()
   T.it("builds only the ones switched on", function()
     local names = {}
     for _, module in ipairs(ModuleLibrary.all()) do names[#names + 1] = module.name end
-    T.same(names, { "BurnerToFurnace", "BurnerToFurnaceCopper", "BurnerToFurnaceStone", "BurnerToBurner" }, "names")
+    T.same(names, { "IronColumn4", "BurnerToFurnace", "CopperColumn4", "BurnerToFurnaceCopper", "BurnerToFurnaceStone",
+      "CoalRing4", "BurnerToBurner" }, "names")
   end)
 end)
 
@@ -164,7 +193,11 @@ T.describe("Console commands", function()
   T.it("/aimod-modules lists the library", function()
     local lines = AIMod.module_list()
     T.truthy(#lines >= #ModuleLibrary.listed(), "a line each, and warnings")
-    T.truthy(lines[1]:find("^BurnerToFurnace: iron%-plate 15%.0/min from iron%-ore; 2 buildings costing iron%-plate 9, stone 10; 3%.6 coal/min into 2; full in 7 min; score "), lines[1])
+    local plain
+    for _, line in ipairs(lines) do
+      if(line:find("^BurnerToFurnace: ")) then plain = line end
+    end
+    T.truthy(plain and plain:find("^BurnerToFurnace: iron%-plate 15%.0/min from iron%-ore; 2 buildings costing iron%-plate 9, stone 10; 3%.6 coal/min into 2; full in 7 min; score "), tostring(plain))
     T.truthy(lines[#lines]:find("%(off%)"), lines[#lines])
   end)
 
@@ -189,7 +222,7 @@ T.describe("Choosing the modules", function()
     T.same(names(), { "IronToChest", "BurnerToBurner" }, "chosen")
     T.eq(ModuleLibrary.producer(Fakes.player{}, "iron-plate"), IronToChestModule or ModuleLibrary.get("IronToChest"), "iron from the chest module")
     ModuleLibrary.choose(nil)
-    T.eq(names()[1], "BurnerToFurnace", "back to the library")
+    T.eq(names()[1], "IronColumn4", "back to the library")
   end)
 
   T.it("refuses a name it doesn't know", function()
@@ -200,7 +233,7 @@ T.describe("Choosing the modules", function()
   T.it("/aimod-use sets, shows and resets the choice", function()
     T.truthy(AIMod.use_modules("IronToChest, BurnerToBurner"):find("IronToChest, BurnerToBurner %(your choice"), "set")
     T.truthy(AIMod.use_modules(""):find("IronToChest, BurnerToBurner"), "shown")
-    T.truthy(AIMod.use_modules("default"):find("^AIMod builds, best first: BurnerToFurnace"), "reset")
+    T.truthy(AIMod.use_modules("default"):find("^AIMod builds, best first: IronColumn4, BurnerToFurnace"), "reset")
     T.truthy(AIMod.use_modules("Nope"):find("no module Nope"), "unknown")
   end)
 end)

@@ -90,7 +90,7 @@ T.describe("ResourceManager", function()
   end)
 
   T.it("starts no module the bot gave up on", function()
-    storage.failed_goals = { [1] = { "BurnerToFurnace" } }
+    storage.failed_goals = { [1] = { "IronColumn4", "BurnerToFurnace" } }
     T.eq(manager:best_resource_source(player, "iron-plate"), nil, "source")
   end)
 end)

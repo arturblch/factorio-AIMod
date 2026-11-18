@@ -162,7 +162,9 @@ function ResourceManager:best_resource_source(player, type, optional, machine)
   if(research:provides_type(type)) then
     return research;
   end
-  local module = ModuleLibrary.producer(player, type, ModuleLibrary.being_built(machine));
+  -- needed 0: the cheapest module that makes any, to have the items soon
+  -- (more a minute is GrowthTask's business)
+  local module = ModuleLibrary.producer(player, type, ModuleLibrary.being_built(machine), 0);
   return module and BuildModuleResourceSource:new{module=module} or nil;
 end
 

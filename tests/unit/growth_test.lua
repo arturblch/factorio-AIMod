@@ -30,6 +30,29 @@ T.describe("BaseModule:fuelUse", function()
   end)
 end)
 
+T.describe("Waiting on a module for more than it holds", function()
+  T.before_each(function()
+    Lab.reset()
+    storage.resource_managers[1] = ResourceManager:new()
+  end)
+
+  T.it("waits only for what the outputs hold, the rest comes next round", function()
+    -- refuelling a column of 8 burners asked a pair of coal drills for 94
+    -- coal, and the bot stood there for the rest of the game
+    local pair = built(BurnerToBurnerModule, "coal", 0)
+    fuel_all(pair, 10)
+    T.eq(pair:outputCapacity("coal"), 90, "2 drills x (50 - 5 kept)")
+    local tasks = pair:generateTasksForOutput("coal", 94, 94)
+    local wait = tasks[#tasks]
+    T.same({ getmetatable(wait) == WaitForOutputTask, wait.qty }, { true, 90 }, "wait")
+  end)
+
+  T.it("a furnace holds a stack of plates", function()
+    local module = built(BurnerToFurnaceModule, "iron-ore", 0)
+    T.eq(module:outputCapacity("iron-plate"), 100, "one result slot")
+  end)
+end)
+
 T.describe("GrowthTask", function()
   local machine, player
   T.before_each(function()
@@ -49,16 +72,31 @@ T.describe("GrowthTask", function()
     T.eq(next_product(), "coal", "3.6 coal a minute burnt, none made")
   end)
 
+  -- two coal pairs make 51 a minute
   T.it("then the product furthest behind its share", function()
     built(BurnerToFurnaceModule, "iron-ore", 0)
     built(BurnerToBurnerModule, "coal", 10)
+    built(BurnerToBurnerModule, "coal", 20)
     T.eq(next_product(), "copper-plate", "copper 0 of 1 before iron 15 of 2")
+  end)
+
+  T.it("adds coal before a module the coal wouldn't keep up with", function()
+    built(BurnerToFurnaceModule, "iron-ore", 0)
+    built(BurnerToBurnerModule, "coal", 10)
+    -- copper column next: (3.6 + 14.4) x 2 = 36 of one pair's 25.5
+    T.eq(next_product(), "coal", "coal before the copper column")
+    built(BurnerToBurnerModule, "coal", 20)
+    T.eq(next_product(), "copper-plate", "36 of two pairs' 51: copper")
+    built(ModuleLibrary.get("CopperColumn4"), "copper-ore", 30)
+    -- iron column next: (18 + 14.4) x 2 = 64.8 > 51
+    T.eq(next_product(), "coal", "coal before the iron column")
   end)
 
   T.it("skips what it gave up on", function()
     built(BurnerToFurnaceModule, "iron-ore", 0)
     built(BurnerToBurnerModule, "coal", 10)
-    storage.failed_goals = { [1] = { "BurnerToFurnaceCopper" } }
+    built(BurnerToBurnerModule, "coal", 20)
+    storage.failed_goals = { [1] = { "CopperColumn4", "BurnerToFurnaceCopper" } }
     T.eq(next_product(), "iron-plate", "iron, no bricks")
   end)
 
@@ -99,7 +137,9 @@ T.describe("GrowthTask", function()
 
   T.it("stops when no module can be added", function()
     storage.goals_done = { [1] = true }
-    storage.failed_goals = { [1] = { "BurnerToFurnace", "BurnerToFurnaceCopper", "StonePairFurnace", "BurnerToFurnaceStone", "BurnerToBurner" } }
+    local every = {}
+    for _, module in ipairs(ModuleLibrary.listed()) do every[#every + 1] = module.name end
+    storage.failed_goals = { [1] = every }
     local growth = GrowthTask:new{}
     machine:pushSingle(growth)
     growth:tick{ player = player, machine = machine }

@@ -1,0 +1,12 @@
+{"blueprint": {"label": "4 burner drills back to back, each facing a stone furnace", "item": "blueprint",
+  "icons": [{"signal": {"name": "burner-mining-drill"}, "index": 1}, {"signal": {"name": "stone-furnace"}, "index": 2}],
+  "entities": [
+    {"entity_number": 1, "name": "stone-furnace", "position": {"x": 1, "y": 1}},
+    {"entity_number": 2, "name": "burner-mining-drill", "position": {"x": 3, "y": 1}, "direction": 12},
+    {"entity_number": 3, "name": "burner-mining-drill", "position": {"x": 5, "y": 1}, "direction": 4},
+    {"entity_number": 4, "name": "stone-furnace", "position": {"x": 7, "y": 1}},
+    {"entity_number": 5, "name": "stone-furnace", "position": {"x": 1, "y": 3}},
+    {"entity_number": 6, "name": "burner-mining-drill", "position": {"x": 3, "y": 3}, "direction": 12},
+    {"entity_number": 7, "name": "burner-mining-drill", "position": {"x": 5, "y": 3}, "direction": 4},
+    {"entity_number": 8, "name": "stone-furnace", "position": {"x": 7, "y": 3}}
+  ]}}

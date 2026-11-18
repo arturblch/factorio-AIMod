@@ -97,6 +97,22 @@ function BaseModule:outputCount(product)
   return total;
 end
 
+-- The most of `product` the outputs can hold at once for the bot (beyond
+-- what each keeps): a pair of coal drills holds 2 x 45, so waiting for 94
+-- coal there would never end.
+function BaseModule:outputCapacity(product)
+  local total = 0;
+  for i, output in ipairs(self.outputs) do
+    local entity = self:entity(output.building);
+    local inventory = output.type == product and entity and output_inventory(entity, output);
+    if(inventory) then
+      local room = inventory.get_item_count(product) + inventory.get_insertable_count(product) - (output.keep or 0);
+      total = total + math.max(room, 0);
+    end
+  end
+  return total;
+end
+
 function BaseModule:hasOutputAvailable(product)
   return self:outputCount(product) > 0;
 end
@@ -356,6 +372,9 @@ end
 -- WaitForOutputTask.
 function BaseModule:generateTasksForOutput(product, qty, total)
   local tasks = self:fuelTasks();
+  -- no more than the outputs hold: the rest comes on the next round, as the
+  -- task that asked plans again while it has too few
+  qty = math.min(qty, self:outputCapacity(product));
   if(self:outputCount(product) < qty) then
     tasks[#tasks + 1] = WaitForOutputTask:new{module=self, type=product, qty=qty, total=total};
   end
