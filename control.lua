@@ -14,6 +14,7 @@ require 'controllers/tasks/clear_area_task'
 require 'controllers/tasks/build_building_task'
 require 'controllers/tasks/fuel_building_task'
 require 'controllers/tasks/wait_for_output_task'
+require 'controllers/tasks/hand_smelt_task'
 require 'controllers/tasks/collect_module_output_task'
 require 'controllers/tasks/take_from_chest_task'
 require 'controllers/tasks/make_room_task'
@@ -58,6 +59,7 @@ local persistent_classes = {
   BuildBuildingTask = BuildBuildingTask,
   FuelBuildingTask = FuelBuildingTask,
   WaitForOutputTask = WaitForOutputTask,
+  HandSmeltTask = HandSmeltTask,
   CollectModuleOutputTask = CollectModuleOutputTask,
   TakeFromChestTask = TakeFromChestTask,
   MakeRoomTask = MakeRoomTask,
