@@ -59,6 +59,7 @@ API reference matching the installed version: `C:\Program Files (x86)\Steam\stea
 - `require` resolves relative to the requiring file first, then the mod root, then `core/lualib`; `..` is not allowed. `require 'util'` therefore loads the core `util` library (this repo's `util/` is a folder), while `require 'util/logger'` loads the repo file.
 - Use `storage`, `helpers.write_file`, `prototypes.entity[...]`, `defines.inventory.character_main` (2.x names).
 - With a full main inventory the character can't mine: the mining bar keeps filling and nothing is mined or dropped. An entity with several products (a huge rock: stone and coal) is only mined when all of them fit at once. A hand-craft takes its ingredients when queued, and a finished craft waits until its product has a slot, stalling the whole queue. Mining, collecting and crafting tasks check room first (`Inventories.has_room_for` / `has_room_for_all`) and push `MakeRoomTask`.
+- The character mines whatever is selected (`mining_state` only says *that* it mines). Selecting by position (`update_selected_entity`) is ambiguous: tree selection boxes are tall (tree-02-red: 1.8 × 2.8 tiles) and overlap, and the game picks the tree in front, so a point on the target can select its neighbour. `MineEntityTask` therefore assigns `player.selected = entity`, which selects exactly that entity if it is selectable, and checks it took before mining.
 - Logging goes through `Logger.makeLogger("Name")` → `log(msg, level)`; `Logger.LEVEL` in `util/logger.lua` filters (DEBUG logs every steering step).
 
 ## Tests

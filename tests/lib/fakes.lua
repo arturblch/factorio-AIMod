@@ -68,7 +68,9 @@ end
    - crafting_queue: list of {recipe, count, prerequisite}
    - selects: function(position) -> entity or nil, what update_selected_entity
      selects (default: the first entity there that isn't a character);
-     false: nothing ever gets selected
+     false: nothing ever gets selected, by position or by assigning
+     `selected` (otherwise an assigned entity is selected, as the game does
+     with a selectable one)
   Records: printed, crafted, selected_position, selected, and walking_state /
   mining_state are plain fields.
 ]]
@@ -114,6 +116,19 @@ function Fakes.player(opts)
       end
     end
   end
+  -- `selected` is kept out of the table, so that assigning it goes through
+  -- __newindex and can be refused
+  local selection = {}
+  setmetatable(player, {
+    __index = function(_, key) if key == "selected" then return selection.entity end end,
+    __newindex = function(t, key, value)
+      if key == "selected" then
+        selection.entity = (opts.selects ~= false) and value or nil
+      else
+        rawset(t, key, value)
+      end
+    end,
+  })
   -- picks a real entity up: gone from the map, one item in the inventory
   player.mined = {}
   function player.mine_entity(entity, force)
