@@ -20,7 +20,9 @@ require 'controllers/tasks/take_from_chest_task'
 require 'controllers/tasks/make_room_task'
 require 'controllers/tasks/production_goal_task'
 require 'controllers/tasks/research_trigger_task'
+require 'controllers/tasks/research_task'
 require 'controllers/tasks/growth_task'
+require 'util/power'
 require 'controllers/managers/chest_resource_source'
 require 'controllers/managers/build_module_resource_source'
 require 'controllers/managers/research_resource_source'
@@ -47,6 +49,7 @@ local persistent_classes = {
   ChestResourceSource = ChestResourceSource,
   BuildModuleResourceSource = BuildModuleResourceSource,
   ResearchResourceSource = ResearchResourceSource,
+  HandSmeltResourceSource = HandSmeltResourceSource,
   BaseModule = BaseModule,
   Fringe = Fringe,
   GatherResourceTask = GatherResourceTask,
@@ -65,6 +68,7 @@ local persistent_classes = {
   WaitForOutputTask = WaitForOutputTask,
   HandSmeltTask = HandSmeltTask,
   ResearchTriggerTask = ResearchTriggerTask,
+  ResearchTask = ResearchTask,
   GrowthTask = GrowthTask,
   CollectModuleOutputTask = CollectModuleOutputTask,
   TakeFromChestTask = TakeFromChestTask,
@@ -179,6 +183,14 @@ function AIMod.show_plan(player, name)
   ModulePlan.draw(module, location, player.surface, 3600);
   return string.format("AIMod: %s would go at [gps=%d,%d]", name, location.x, location.y);
 end
+
+commands.add_command("aimod-power", "What the AIMod bot's electric networks make and use, and its boilers' fuel.", function(command)
+  local player = command.player_index and game.get_player(command.player_index);
+  if(not player) then return end
+  for i, line in ipairs(Power.lines(player)) do
+    player.print("AIMod power, " .. line);
+  end
+end)
 
 commands.add_command("aimod-modules", "Lists the modules the AIMod bot builds (blueprints/library.lua).", function(command)
   local player = command.player_index and game.get_player(command.player_index);

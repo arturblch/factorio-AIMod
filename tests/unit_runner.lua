@@ -27,6 +27,7 @@ require 'tests/unit/research_test'
 require 'tests/unit/growth_test'
 require 'tests/unit/blueprint_test'
 require 'tests/unit/found_blueprints_test'
+require 'tests/unit/power_test'
 
 -- shared state every test starts without
 T.global_before[#T.global_before + 1] = function()

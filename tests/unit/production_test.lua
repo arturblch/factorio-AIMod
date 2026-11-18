@@ -236,7 +236,13 @@ T.describe("Modules that others depend on", function()
   T.it("a module being built isn't started again for its own materials", function()
     machine:pushSingle(BuildModuleTask:new{ module = BurnerToFurnaceModule })
     local manager = storage.resource_managers[1]
-    T.eq(manager:best_resource_source(player, "iron-plate", false, machine), nil, "iron plates, nor from the column")
+    -- not the pair again, nor the column: the plates are smelted by hand
+    local source = manager:best_resource_source(player, "iron-plate", false, machine)
+    T.eq(getmetatable(source), HandSmeltResourceSource, "iron plates by hand")
+    local tasks = GoalMachine:new()
+    source:gather{ type = "iron-plate", qty = 9, player = player, machine = tasks }
+    local top = Fakes.goals(tasks)[1]
+    T.same({ getmetatable(top) == HandSmeltTask, top.item, top.qty }, { true, "iron-plate", 9 }, "a hand smelt")
     T.eq(manager:best_resource_source(player, "copper-plate", false, machine).module, BurnerToFurnaceCopperModule,
       "copper plates")
   end)

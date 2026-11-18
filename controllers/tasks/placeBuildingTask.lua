@@ -50,9 +50,24 @@ function PlaceBuildingTask:tick (args)
       self.failed = true;
       return;
     end
-    -- stand just above the building; 2 tiles of clearance because
-    -- MoveToPointTask stops anywhere within ~1.4 tiles of its target
-    args.machine:pushSingle(MoveToPointTask:new{x=self.position.x, y=self.position.y + box.left_top.y - 2})
+    -- stand just above the building (else below, left, right: whichever side
+    -- is land - an offshore pump has water on one side); 2 tiles of
+    -- clearance because MoveToPointTask stops anywhere within ~1.4 tiles of
+    -- its target
+    local sides = {
+      {x=self.position.x, y=self.position.y + box.left_top.y - 2},
+      {x=self.position.x, y=self.position.y + box.right_bottom.y + 2},
+      {x=self.position.x + box.left_top.x - 2, y=self.position.y},
+      {x=self.position.x + box.right_bottom.x + 2, y=self.position.y},
+    };
+    local stand = sides[1];
+    for i, side in ipairs(sides) do
+      if(not player.surface.get_tile(side.x, side.y).collides_with("water_tile")) then
+        stand = side;
+        break;
+      end
+    end
+    args.machine:pushSingle(MoveToPointTask:new{x=stand.x, y=stand.y})
   else
     if(Inventories.total_craftable_count(player, self.type) == 0) then
       if(Inventories.count_with_queue(player, self.type) > 0) then
