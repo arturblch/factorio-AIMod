@@ -139,13 +139,43 @@ function readLibrary(file) {
   return { blueprints, modules };
 }
 
+// The community blueprints of blueprints/found/catalog.lua (one entry a
+// line, see tools/found-blueprints.js), with what the bot's checks said.
+function readCatalog(file) {
+  if (!fs.existsSync(file)) return [];
+  const entries = [];
+  for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
+    if (!/^\s*\{id="/.test(line)) continue;
+    const entry = {};
+    // Lua's \ddd escapes (control characters) as JSON's \u00hh
+    const unlua = s => s.replace(/\\(\d{3})/g, (m, d) => '\\u' + Number(d).toString(16).padStart(4, '0'));
+    for (const m of line.matchAll(/(\w+)="((?:[^"\\]|\\.)*)"/g)) entry[m[1]] = JSON.parse('"' + unlua(m[2]) + '"');
+    const fits = (line.match(/fits=\{([^}]*)\}/) || [])[1] || '';
+    entry.fits = {};
+    for (const m of fits.matchAll(/\["([^"]+)"\]=([0-9.]+)/g)) entry.fits[m[1]] = Number(m[2]);
+    entries.push(entry);
+  }
+  return entries;
+}
+
+// Copies the library, the found blueprints and the trials (blueprints/trials.json)
+// into the page between its /*NAME-START*/ and /*NAME-END*/ markers.
 function viewer(root) {
   const library = readLibrary(root + '/blueprints/library.lua');
+  const found = readCatalog(root + '/blueprints/found/catalog.lua');
+  const trialsFile = root + '/blueprints/trials.json';
+  const trials = fs.existsSync(trialsFile) ? JSON.parse(fs.readFileSync(trialsFile, 'utf8')) : {};
   const page = root + '/tools/blueprint-viewer.html';
-  const html = fs.readFileSync(page, 'utf8').replace(/\/\*LIBRARY-START\*\/[\s\S]*?\/\*LIBRARY-END\*\//,
-    '/*LIBRARY-START*/' + JSON.stringify(library) + '/*LIBRARY-END*/');
+  let html = fs.readFileSync(page, 'utf8');
+  for (const [name, value] of [['LIBRARY', library], ['FOUND', found], ['TRIALS', trials]]) {
+    const marker = new RegExp(`/\\*${name}-START\\*/[\\s\\S]*?/\\*${name}-END\\*/`);
+    if (!marker.test(html)) throw new Error(`${page} has no /*${name}-START*/ marker`);
+    // a function, so that "$&" and the like in the data stay as they are
+    html = html.replace(marker, () => `/*${name}-START*/${JSON.stringify(value).replace(/<\//g, '<\\/')}/*${name}-END*/`);
+  }
   fs.writeFileSync(page, html);
-  return `${page}: ${Object.keys(library.blueprints).length} blueprints, ${library.modules.length} modules`;
+  return `${page}: ${Object.keys(library.blueprints).length} blueprints, ${library.modules.length} modules, ` +
+    `${found.length} found (${found.filter(e => Object.keys(e.fits).length).length} fit), trials of ${(trials.growth && trials.growth.variants || []).length} variants`;
 }
 
 function main(argv) {
@@ -165,4 +195,4 @@ if (require.main === module) {
     process.exit(1);
   }
 }
-module.exports = { decode, encode, show, readLibrary };
+module.exports = { decode, encode, show, readLibrary, readCatalog };

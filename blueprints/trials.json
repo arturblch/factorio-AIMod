@@ -1,0 +1,52 @@
+{
+  "about": "What the bot's modules did in headless runs (tools/run-headless.ps1). Kept by hand; `node tools/blueprint.js viewer` copies it into tools/blueprint-viewer.html. Scores are the production score (util/production_score.lua).",
+  "growth": {
+    "date": "2026-11-18",
+    "branch": "big-modules",
+    "seeds": [1, 4, 42, 1234567],
+    "command": "-Grow (10 min) and -Grow -Peaceful -Ticks 108000 (30 min); -Modules for the pairs",
+    "variants": [
+      {"name": "Пары до исправлений", "note": "ветка blueprints: бот стоял, ожидая от модуля больше, чем тот вмещает",
+       "modules": ["BurnerToFurnace", "BurnerToFurnaceCopper", "BurnerToBurner"],
+       "min10": [3768, 4067, 3471, 3033], "min30": [18110, 8418, 20055, 17039]},
+      {"name": "Пары, запас угля 1,25", "note": "ожидание не больше вместимости, рост смотрит на следующий модуль",
+       "modules": ["BurnerToFurnace", "BurnerToFurnaceCopper", "BurnerToBurner"],
+       "min30": [17917, 25434, 20707, 17892]},
+      {"name": "Пары, запас угля 2", "note": "место — у персонажа",
+       "modules": ["BurnerToFurnace", "BurnerToFurnaceCopper", "BurnerToBurner"],
+       "min10": [4162, 5152, 3812, 3299], "min30": [19217, 31052, 25131, 19637]},
+      {"name": "Пары, запас 2, ряды", "note": "место — рядом с модулем на той же руде",
+       "modules": ["BurnerToFurnace", "BurnerToFurnaceCopper", "BurnerToBurner"],
+       "min10": [4155, 5138, 3579, 3285], "min30": [19487, 27062, 23957, 19077]},
+      {"name": "Колонки и кольцо, запас 2", "note": "место — у персонажа; с исправлением соседнего дерева (1.10)",
+       "modules": ["IronColumn4", "CopperColumn4", "CoalRing4", "BurnerToFurnace", "BurnerToBurner"],
+       "min10": [5195, 5513, 4348, 3634], "min30": [23144, 22897, 24649, 22292]},
+      {"name": "Колонки и кольцо, запас 2, ряды", "note": "так сейчас по умолчанию; на руде только буры, место — рядом с модулем на той же руде",
+       "default": true,
+       "modules": ["IronColumn4", "CopperColumn4", "CoalRing4", "BurnerToFurnace", "BurnerToBurner"],
+       "min10": [5195, 5513, 4173, 3634], "min30": [23185, 35969, 21965, 21902]}
+    ]
+  },
+  "goals": {
+    "note": "28 карт до «Completed goals» (10 железа/мин, затем 20 угля/мин), тиков в сумме",
+    "runs": [
+      {"name": "Цели берут самый дешёвый покрывающий модуль (пары)", "ticks": 115397, "default": true},
+      {"name": "Цель по углю строит кольцо", "ticks": 192590}
+    ]
+  },
+  "modules": {
+    "BurnerToFurnace": "Строит цели и старт; в росте из одних пар — 95 037 за 30 мин (с рядами 89 583).",
+    "BurnerToFurnaceCopper": "Медь в росте из одних пар; при колонках — запасной.",
+    "BurnerToBurner": "Цель «20 угля/мин» (25,5 угля/мин); 28 карт — 115 397 тиков.",
+    "IronColumn4": "Строит рост: с кольцом за 30 мин 103 021 против 89–95 тыс. у пар, за 10 мин 18 515 против 16–16,4 тыс. Модуль выключается целиком, если руда кончилась под одним буром (1.2).",
+    "CopperColumn4": "Медь в росте; до исправления соседнего дерева (1.10) на seed 4 встала и тянула вниз весь вариант.",
+    "CoalRing4": "Заправляется один раз, 51 угля/мин; для цели по углю дороже пары: 192 590 тиков на 28 картах против 115 397.",
+    "IronColumn8": "Строится слишком долго: за 10 мин роста часть не достроена (замер до исправлений).",
+    "CopperColumn8": "Как IronColumn8.",
+    "CoalRing8": "Как IronColumn8.",
+    "IronToChest": "Рост 10 мин с ним — 11 067 против 14 009 у пар (замер на research-growth).",
+    "IronBeltLine": "Бот строит её, но 13 горелок не обслуживает: на seed 1 к 15-й минуте из 18 зданий работают 2.",
+    "StonePairFurnace": "15 кирпичей/мин: 16 933 тика против 20 260 у одного бура; для 5/мин — медленнее.",
+    "StoneToChest": "Камень в сундук: целью сам по себе не бывает."
+  }
+}
