@@ -1,4 +1,5 @@
 require 'util'
+require 'util/power'
 require 'controllers/tasks/fuel_building_task'
 require 'controllers/tasks/wait_for_output_task'
 require 'controllers/tasks/gatherResourcesTask'
@@ -289,6 +290,10 @@ end
 -- itself (BurnerToBurner) needs none; its own burning is already taken off
 -- its productionRate.
 function BaseModule:fuelUse(fuel)
+  if(self.power) then
+    -- a boiler burns what the engines deliver, not its full 1.8 MW
+    return Power.fuelUse(self, fuel);
+  end
   local total = 0;
   for i, input in ipairs(self.inputs) do
     if(input.slot == "fuel" and input.type == fuel and input.ongoing ~= false) then

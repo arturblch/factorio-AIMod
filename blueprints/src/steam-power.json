@@ -1,0 +1,9 @@
+{"blueprint": {"label": "Steam power with a lab: an offshore pump, a boiler, a steam engine", "item": "blueprint",
+  "icons": [{"signal": {"name": "steam-engine"}, "index": 1}, {"signal": {"name": "lab"}, "index": 2}],
+  "entities": [
+    {"entity_number": 1, "name": "boiler", "position": {"x": 4.5, "y": 6}},
+    {"entity_number": 2, "name": "offshore-pump", "position": {"x": 6.5, "y": 6.5}, "direction": 4},
+    {"entity_number": 3, "name": "steam-engine", "position": {"x": 4.5, "y": 2.5}},
+    {"entity_number": 4, "name": "small-electric-pole", "position": {"x": 2.5, "y": 2.5}},
+    {"entity_number": 5, "name": "lab", "position": {"x": 1.5, "y": 4.5}}
+  ]}}

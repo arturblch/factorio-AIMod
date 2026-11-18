@@ -234,7 +234,7 @@ foreach ($s in ($Seed -split ',' | ForEach-Object { [uint32]$_.Trim() })) {
     $why = @($explained + $errors + "exit code $($p.ExitCode)")[0]
     $runs.Add([pscustomobject]@{ Seed = $s; Result = "FAILED: $why"; Ticks = $null; Score = $points })
   } elseif ($completed) {
-    $extra = @($test | Where-Object { $_ -match '^cursor noise|^full inventory|^modules:' })
+    $extra = @($test | Where-Object { $_ -match '^cursor noise|^full inventory|^modules:|^power:' })
     Write-Host ((@("seed ${s}: OK, $completed") + $extra + $scoreNote | Where-Object { $_ }) -join "; ") -ForegroundColor Green
     $ticksTaken = if ($completed -match 't=(\d+)') { [int]$Matches[1] } else { $null }
     $runs.Add([pscustomobject]@{ Seed = $s; Result = "OK"; Ticks = $ticksTaken; Score = $points })

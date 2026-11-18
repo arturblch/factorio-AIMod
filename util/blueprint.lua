@@ -117,6 +117,45 @@ local function is_fuel(item)
   return prototype ~= nil and prototype.fuel_value > 0;
 end
 
+-- The bounding box `area` (left_top / right_bottom, or an array of two
+-- points) as numbers.
+local function box(area)
+  local a, b = area.left_top or area[1], area.right_bottom or area[2];
+  return {x=a.x or a[1], y=a.y or a[2]}, {x=b.x or b[1], y=b.y or b[2]};
+end
+
+-- Tiles a building needs water on, as {x=, y=}: the areas of its tile
+-- buildability rules that require water (an offshore pump: in front of it).
+-- Without such a rule, the tile it faces.
+local function water_tiles(prototype, position, direction)
+  local result = {};
+  for i, rule in pairs(prototype.tile_buildability_rules or {}) do
+    local required = rule.required_tiles and rule.required_tiles.layers or {};
+    if(required["water_tile"]) then
+      local lt, rb = box(rule.area);
+      local a, b = rotate(lt, direction), rotate(rb, direction);
+      local x0, x1 = math.min(a.x, b.x), math.max(a.x, b.x);
+      local y0, y1 = math.min(a.y, b.y), math.max(a.y, b.y);
+      for x = math.floor(position.x + x0 + 0.01), math.ceil(position.x + x1 - 0.01) - 1 do
+        for y = math.floor(position.y + y0 + 0.01), math.ceil(position.y + y1 - 0.01) - 1 do
+          result[#result + 1] = {x=x, y=y};
+        end
+      end
+    end
+  end
+  if(#result == 0) then
+    local ahead = rotate({0, -1}, direction);
+    result[1] = {x=math.floor(position.x + ahead.x), y=math.floor(position.y + ahead.y)};
+  end
+  return result;
+end
+
+-- Whether the building runs on the electric network: a consumer, or a
+-- generator feeding it.
+local function on_network(prototype)
+  return prototype.electric_energy_source_prototype ~= nil or prototype.type == "generator";
+end
+
 local function names(set)
   local list = {};
   for name in pairs(set) do list[#list + 1] = name; end
@@ -128,7 +167,11 @@ end
   Module data from `spec`:
    - name: string; the module's name
    - blueprint: string; a blueprint string
-   - resource: string; what the drills mine (iron-ore, coal, stone, ...)
+   - resource: string; what the drills mine (iron-ore, coal, stone, ...), or
+     "water" for a power module: an offshore pump (geometry tiles it needs
+     water on are marked `tile = "water"`, its own `shore = true`), boilers
+     the bot fuels, generators and consumers on poles. It makes no items
+     (`power = true`, no outputs).
    - product: string; (optional) checked to be among the outputs
   Returns the data for BaseModule:new and the checks {errors=, warnings=,
   flows=} (lists of strings), or nil and why not.
@@ -146,8 +189,9 @@ function Blueprint.module(spec)
   if(#entities == 0) then
     return nil, "the blueprint has no entities";
   end
-  local ore = mined_item(spec.resource);
-  if(not ore) then
+  local power = spec.resource == "water";
+  local ore = not power and mined_item(spec.resource);
+  if(not power and not ore) then
     return nil, "nothing to mine in " .. tostring(spec.resource);
   end
 
@@ -164,9 +208,14 @@ function Blueprint.module(spec)
     part.tiles = Blueprint.footprint(prototype, part.position, part.direction);
     if(part.kind == "mining-drill") then
       part.mines = mining_area(prototype, part.position);
+    elseif(part.kind == "offshore-pump") then
+      part.water = water_tiles(prototype, part.position, part.direction);
     end
     for j, area in ipairs({part.tiles, part.mines}) do
       x0, y0 = math.min(x0, area.x0), math.min(y0, area.y0);
+    end
+    for j, t in ipairs(part.water or {}) do
+      x0, y0 = math.min(x0, t.x), math.min(y0, t.y);
     end
     parts[i] = part;
   end
@@ -194,6 +243,19 @@ function Blueprint.module(spec)
         for y = part.mines.y0, part.mines.y1 do
           tile(x, y, spec.resource);
         end
+      end
+    end
+    if(part.water) then
+      -- the pump stands on the shore (its tiles may be water or land), with
+      -- water in front of it
+      for x = t.x0, t.x1 do
+        for y = t.y0, t.y1 do
+          geometry[key(x - x0, y - y0)].shore = true;
+        end
+      end
+      for j, w in ipairs(part.water) do
+        tile(w.x, w.y, nil);
+        geometry[key(w.x - x0, w.y - y0)].tile = "water";
       end
     end
     local building = {type=part.prototype.name, position={x=part.position.x - x0, y=part.position.y - y0}};
@@ -281,7 +343,9 @@ function Blueprint.module(spec)
   end
 
   for i, part in ipairs(parts) do
-    if(part.kind == "mining-drill") then
+    if(part.kind == "mining-drill" and power) then
+      errors[#errors + 1] = label(i) .. ": a power module mines nothing";
+    elseif(part.kind == "mining-drill") then
       local j = at(offset(part, part.prototype.vector_to_place_result));
       part.drops_into = j;
       if(not j or j == i) then
@@ -403,7 +467,33 @@ function Blueprint.module(spec)
     return a.position.y < b.position.y;
   end);
 
-  if(#outputs == 0) then
+  if(power) then
+    -- water in, power out: a pump, something that makes power, poles reaching
+    -- every generator and consumer
+    local kinds = {};
+    for i, part in ipairs(parts) do kinds[part.kind] = true; end
+    if(not kinds["offshore-pump"]) then
+      errors[#errors + 1] = "a power module needs an offshore pump";
+    end
+    if(not kinds["generator"]) then
+      errors[#errors + 1] = "a power module needs a generator (a steam engine)";
+    end
+    for i, part in ipairs(parts) do
+      if(on_network(part.prototype)) then
+        local covered = false;
+        for j, pole in ipairs(parts) do
+          if(pole.kind == "electric-pole") then
+            local d = pole.prototype.get_supply_area_distance();
+            covered = covered or (part.tiles.x0 < pole.position.x + d and part.tiles.x1 + 1 > pole.position.x - d and
+                                  part.tiles.y0 < pole.position.y + d and part.tiles.y1 + 1 > pole.position.y - d);
+          end
+        end
+        if(not covered) then
+          warnings[#warnings + 1] = label(i) .. " is out of reach of the poles";
+        end
+      end
+    end
+  elseif(#outputs == 0) then
     errors[#errors + 1] = "nothing ends where the bot can take it (a furnace's result, a chest)";
   end
   if(spec.product) then
@@ -416,7 +506,7 @@ function Blueprint.module(spec)
     end
   end
   return {name=spec.name, resource=spec.resource, geometry=tiles, buildings=buildings, inputs=inputs, outputs=outputs,
-          label=blueprint.label}, nil, {errors=errors, warnings=warnings, flows=flows};
+          power=power or nil, label=blueprint.label}, nil, {errors=errors, warnings=warnings, flows=flows};
 end
 
 return Blueprint;

@@ -200,26 +200,32 @@ function BuildModuleTask:drillsMineOnlyTheirResource(surface, corner)
   return true;
 end
 
+-- Whether a tile is water (or off the generated map: nothing to build on).
+local function is_water(tile)
+  return not tile.valid or tile.collides_with("water_tile");
+end
+
 function BuildModuleTask:canBuildAtPosition(player, position)
   --for each item in the geometry, verify
-  --  a) it's not water (unless it should be)
+  --  a) it's dry land - or water where the module needs water (in front of
+  --     an offshore pump), or either on the shore under the pump
   --  b) it has the resource it needs (if it need one)
   --  c) none of our buildings is already there
   --  d) no cliff runs through it (cliffs can't be cleared by hand)
-  --then that no drill would mine a second kind of resource
+  --then that no drill would mine a second kind of resource, and that the
+  --game itself would take an offshore pump there
   for i, item in pairs(self.module.geometry) do
     local offset = item.position;
     local offsetPosition = {x=position.x + offset.x + TILE_OFFSET, y=position.y + offset.y + TILE_OFFSET};
     local tile = player.surface.get_tile(offsetPosition.x, offsetPosition.y);
-    for i, tileName in pairs(impassibleTiles) do
-      if(tile.prototype.name == tileName) then
-        if(i == 1) then return false end
-        if(item.tile and item.tile == "water") then
-          --continue
-        else
-          return false;
-        end
-      end
+    if(not tile.valid or tile.prototype.name == impassibleTiles[1]) then
+      return false;
+    end
+    local water = is_water(tile);
+    if(item.tile == "water") then
+      if(not water) then return false end
+    elseif(water and not item.shore) then
+      return false;
     end
     for i, entity in pairs(player.surface.find_entities_filtered{position=offsetPosition, force=player.force}) do
       if(entity.type ~= "character") then
@@ -248,6 +254,17 @@ function BuildModuleTask:canBuildAtPosition(player, position)
   end
   -- same corner as in tick(): position is the center of geometry tile (0, 0)
   local corner = {x=math.floor(position.x), y=math.floor(position.y)};
+  for i, building in pairs(self.module.buildings) do
+    if(prototypes.entity[building.type].type == "offshore-pump") then
+      -- the game's own rules for where a pump may stand (manual: as a player
+      -- would place it, tile rules included)
+      local at = {x=corner.x + building.position.x, y=corner.y + building.position.y};
+      if(not player.surface.can_place_entity{name=building.type, position=at, force=player.force,
+          direction=building.direction or defines.direction.north, build_check_type=defines.build_check_type.manual}) then
+        return false;
+      end
+    end
+  end
   return self:drillsMineOnlyTheirResource(player.surface, corner);
 end
 
@@ -259,7 +276,9 @@ function BuildModuleTask.anchor(module)
   local best;
   for i, tile in ipairs(module.geometry) do
     local p = tile.position;
-    if(tile.resource and (not best or p.y < best.y or (p.y == best.y and p.x < best.x))) then
+    -- a power module's anchor is the water in front of its pump
+    local wanted = module.power and tile.tile == "water" or (not module.power and tile.resource);
+    if(wanted and (not best or p.y < best.y or (p.y == best.y and p.x < best.x))) then
       best = p;
     end
   end
@@ -275,7 +294,8 @@ function BuildModuleTask:searchOrigin(player)
   local best, best_distance;
   for i, source in ipairs(manager and manager.sources or {}) do
     local module = source.module;
-    local entity = module and module.resource == self.module.resource and module:entity(1);
+    -- a power module goes near the base: next to any module of ours
+    local entity = module and (self.module.power or module.resource == self.module.resource) and module:entity(1);
     if(entity) then
       local distance = util.distance(player.position, entity.position);
       if(not best_distance or distance < best_distance) then
@@ -286,11 +306,52 @@ function BuildModuleTask:searchOrigin(player)
   return best or player.position;
 end
 
+-- Names of the tiles that are water.
+local water_names;
+local function water_tile_names()
+  if(not water_names) then
+    water_names = {};
+    for name, tile in pairs(prototypes.tile) do
+      if(tile.collision_mask.layers["water_tile"]) then
+        water_names[#water_names + 1] = name;
+      end
+    end
+  end
+  return water_names;
+end
+
+-- Water tiles with land next to them, nearest `origin` first, as centers.
+local function shore_tiles(surface, origin, radius)
+  local result = {};
+  for i, tile in pairs(surface.find_tiles_filtered{position=origin, radius=radius, name=water_tile_names()}) do
+    local p = tile.position;
+    for j, d in ipairs({{0, -1}, {1, 0}, {0, 1}, {-1, 0}}) do
+      if(not is_water(surface.get_tile(p.x + d[1], p.y + d[2]))) then
+        result[#result + 1] = {x=p.x + 0.5, y=p.y + 0.5};
+        break;
+      end
+    end
+  end
+  table.sort(result, function(a, b) return util.distance(origin, a) < util.distance(origin, b); end);
+  return result;
+end
+
 -- Center of the module's geometry tile (0, 0), or nil: the spot nearest the
 -- search origin where it fits.
 function BuildModuleTask:findLocation(player)
   local origin = self:searchOrigin(player);
   local anchor = BuildModuleTask.anchor(self.module);
+  if(self.module.power) then
+    for i, radius in ipairs(SEARCH_RADII) do
+      for j, water in ipairs(shore_tiles(player.surface, origin, radius)) do
+        local position = {x=water.x - anchor.x, y=water.y - anchor.y};
+        if(not self:isBadSpot(position) and self:canBuildAtPosition(player, position)) then
+          return position;
+        end
+      end
+    end
+    return nil;
+  end
   for i, radius in ipairs(SEARCH_RADII) do
     local resources = player.surface.find_entities_filtered{position=origin, radius=radius, name=self.module.resource}
     table.sort(resources, function(a, b)

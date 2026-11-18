@@ -58,6 +58,11 @@ local BLUEPRINTS = {
   -- FFD<D>FF
   -- ...
   ["furnace-column8"] = "0eNqdlNFOgzAUQH+luc8lsYXSwa8YYwrr5o1wWUoxWxb+3dBpNFod5YmQXs7pPQ9coekme3JIHuordKaxHdSwY83kyDq2d9h1I2tM+8r8EJ6cWdO+sINpkY7MsNEPZNlhcmRaCxzQ2x7qb1wO2A40Qv14hRGPZLpFRaa3y1jwZD0S0jELOpg5IO3tGWox88g3wZh9Gr+m5fzEwZJHj/amCy+XZ5r6xjqoBY8jOJyGET0OtFjOYfCy2Bf9D4bk/139Fyn/IHHYo7Pt7UTICDhPA6sYuIhwi7VL67+XVmnh8hij3BIuXxFObwmX3w+3SwsXXbpKC6diDPGwpZxaUU6ILenU/XRCprWL752nxdNRSLElnl4TT22Jp1fEK9Pi6Xn5771ZN4YTVcpKFbKoqlIUWs7zO6ZB+QQ=",
+  --     SSS   steam power with a lab: an offshore pump (W) facing the water, a
+  --    pSSS   boiler (O) the bot keeps fuelled, a steam engine (S) above it, a
+  --  LLLSSS   pole (p) reaching the engine and the lab (L)
+  --  LLLOOO>W
+  ["steam-power"] = "0eNp9kNFqwzAMRX/F6FkpxHMy6t/Y4yjDSdVW4NjGcdaW4n8fSdotrNnebKRzdKUbNHagENkl0DewpiELGt4SmU4Ef6YozpxOwghrGi2ME/5w6E8+kghDF1AY0Xi2FMdXP1HkjuwIEDhRB3oxAIFb73rQ7zfo+eiMHWc60xFomODiDmcEdnu6gC4zrjRb0yx6ZN4hkEucmGb79Ll+uKFrKIIu8QHOYQEh+J4TezdKL6DVpkK4gq7zOO8XLr/xx/LFuPyzpX5YNlVG2HOkdq6qFesLrq7+ZzS5qdbCqR9NZ6wtyFKbIrdF8HbFJv+3Vbg88RNd3mk10juET4r9VK1qua2UVNttXapXmfMXCevE+A==",
   ["belt-line"] ="0eNqV1tFugjAUBuBXac51NWtpQXiAvcRiFtCzpQkW0xajMbz7As5MN6bnXEKb72+hf+AMTdvjPjifoDpDWzfYQgWv7oCi6YPHILbBtW0UnU+dqEWDbZLio+uDcD5iSBiicOPYdC+mzqP46IOvNxhBgku4g+omRYLbdD5C9XaG6D593Y7Bvt4hVJBC7eO+C2kx5sAgwfktHqFSg5yZPqUtvtNuZuthLQF9csnhJWm6OL37ftdggErJK3HZ5GLnvPOfi2mvIGHfRZdc58es4zT9NK0Bti7g5jKyGpf0y9U8N6O6Gc+1VNfw3ILqWp5bUt1c/nNS/r6y5eUh6KW9Z80MW5BZzWFXZDbjsCWZNRxWvZBdy3IV2c1Zria7BcvNyO6K5RqyW7JcSy/FCwtmtI1VN0Xvm2IVTtEbp1iVU/TOKVbpNL10itU6TW+dYtVO//nGXf8DHpy3bGmHOStjWPqJZRiWeWJZhpU/sX5adP+7MlOiyZlXCrKSPVBWZMU+UEqyUlyVtYQDhjgN2VyX1mhTlrkyhR6GL0ngeso=",
 };
 
@@ -80,6 +85,9 @@ return {
     {name="BurnerToFurnaceStone", blueprint="burner-furnace", resource="stone", product="stone-brick"},
     {name="CoalRing4", blueprint="coal-ring4", resource="coal", product="coal"},
     {name="BurnerToBurner", blueprint="coal-pair", resource="coal", product="coal"},
+    -- power: built by GrowthTask once the burner base runs (plan 3.4); it
+    -- makes no items, so no goal ever picks it
+    {name="SteamPower", blueprint="steam-power", resource="water"},
     -- off: with burners, inserters and belts cost more and add buildings to
     -- fuel for the same plates (/aimod-modules shows each one's score), and
     -- a chest of stone is no goal of its own; /aimod-use can switch them on
