@@ -6,6 +6,7 @@ require 'tree_resource_source'
 require 'craft_resource_source'
 require 'build_module_resource_source'
 require 'research_resource_source'
+require 'hand_smelt_resource_source'
 require 'controllers/modules/library'
 
 --[[
@@ -165,7 +166,15 @@ function ResourceManager:best_resource_source(player, type, optional, machine)
   -- needed 0: the cheapest module that makes any, to have the items soon
   -- (more a minute is GrowthTask's business)
   local module = ModuleLibrary.producer(player, type, ModuleLibrary.being_built(machine), 0);
-  return module and BuildModuleResourceSource:new{module=module} or nil;
+  if(module) then
+    return BuildModuleResourceSource:new{module=module};
+  end
+  -- no module to build either (the one making it is being built and lacks
+  -- this very item): smelt it by hand
+  if(HandSmeltTask.recipe(player, type)) then
+    return HandSmeltResourceSource:new{item=type};
+  end
+  return nil;
 end
 
 -- Pushes the tasks to get `qty` of `type` in the inventory onto `machine`.

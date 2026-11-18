@@ -6,6 +6,8 @@ require 'controllers/tasks/production_goal_task'
 require 'controllers/tasks/fuel_building_task'
 require 'controllers/tasks/collect_module_output_task'
 require 'controllers/tasks/gatherResourcesTask'
+require 'controllers/tasks/build_module_task'
+require 'controllers/tasks/research_task'
 require 'controllers/modules/library'
 
 --[[
@@ -32,6 +34,13 @@ GrowthTask.FUEL = "coal";
 -- coal made per coal burnt: the rest starts new modules (a column of four
 -- pairs takes 160 coal to fuel), smelts by hand and covers the walks
 local COAL_MARGIN = 2;
+
+-- Electricity (plan 3.4): once the burner base has this many modules, a
+-- power module (steam engine and a lab, blueprints/library.lua), then the
+-- lab researches what electricity is for.
+GrowthTask.POWER_MODULE = "SteamPower";
+GrowthTask.ELECTRICITY_AFTER = 4;
+GrowthTask.RESEARCH = {"electric-mining-drill"};
 local LOW_FUEL = 5;       -- refuel below this many (a burner drill burns 2.25 coal a minute)
 local FUEL_AMOUNT = 20;   -- and top up to this many
 
@@ -100,6 +109,44 @@ function GrowthTask.upkeep(player)
   return best;
 end
 
+local function given_up(player, name)
+  for i, failed in ipairs(storage.failed_goals and storage.failed_goals[player.index] or {}) do
+    if(failed == name) then return true; end
+  end
+  return false;
+end
+
+-- The electricity step due now, as tasks, or nil: the power module once
+-- there are ELECTRICITY_AFTER modules, then research in its lab while the
+-- labs lack packs for it.
+function GrowthTask.electricity(player)
+  local power = ModuleLibrary.get(GrowthTask.POWER_MODULE);
+  if(not power or given_up(player, power.name)) then
+    return nil;
+  end
+  local count, built = 0, false;
+  for i, module in ipairs(modules(player)) do
+    if(module.power) then built = true; else count = count + 1; end
+  end
+  if(not built) then
+    if(count >= GrowthTask.ELECTRICITY_AFTER) then
+      log("Growing: power, with " .. count .. " modules running", "INFO");
+      return {BuildModuleTask:new{module=power}};
+    end
+    return nil;
+  end
+  for i, name in ipairs(GrowthTask.RESEARCH) do
+    local tech = player.force.technologies[name];
+    if(tech and not tech.researched and not given_up(player, "research " .. name)) then
+      local task = ResearchTask:new{tech=name};
+      if(not task:achieved{player=player}) then
+        return {task};
+      end
+    end
+  end
+  return nil;
+end
+
 -- The product to build the next module for, or nil when no module can be added.
 -- Coal comes first when the coal modules wouldn't keep up (with a margin)
 -- with what the modules burn together with the next one: a column of four
@@ -147,7 +194,7 @@ function GrowthTask:tick (args)
     AIMod.goals_done(player);
   end
 
-  local tasks = GrowthTask.upkeep(player);
+  local tasks = GrowthTask.upkeep(player) or GrowthTask.electricity(player);
   if(tasks) then
     args.machine:pushStart(tasks);
     return;

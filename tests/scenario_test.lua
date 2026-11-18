@@ -137,6 +137,20 @@ local function module_summary(player)
   return "modules: " .. table.concat(parts, " ") .. " | per minute: " .. table.concat(rates, " ")
 end
 
+-- The electric networks (util/power.lua) and how far GrowthTask.RESEARCH got.
+local function power_summary(player)
+  local research = {}
+  for _, name in ipairs(GrowthTask.RESEARCH) do
+    local tech = player.force.technologies[name]
+    local state = tech.researched and "done"
+      or (player.force.current_research and player.force.current_research.name == name
+          and string.format("%.0f %%", player.force.research_progress * 100))
+      or "not started"
+    research[#research + 1] = name .. " " .. state
+  end
+  return Power.summary(player) .. " | research: " .. table.concat(research, ", ")
+end
+
 local function goal_flags()
   local goals = {}
   for kind, item, n in (script.test_arg or ""):gmatch("(%a+):([%w%-]+):([%d%.]+)") do
@@ -320,7 +334,10 @@ script.on_event(defines.events.on_tick, function(event)
   if event.tick % SNAPSHOT_EVERY == 0 then
     snapshot(event.tick, player, machine)
     log_score(player)
-    if grow_until then log("[test]   " .. module_summary(player)) end
+    if grow_until then
+      log("[test]   " .. module_summary(player))
+      log("[test]   " .. power_summary(player))
+    end
     if not check_storage(event.tick) then return end
   end
   if grow_until and event.tick >= grow_until and not t.completed then
@@ -328,6 +345,7 @@ script.on_event(defines.events.on_tick, function(event)
     snapshot(event.tick, player, machine)
     log_score(player)
     log("[test] " .. module_summary(player))
+    log("[test] " .. power_summary(player))
     local failed = storage.failed_goals and storage.failed_goals[1] or {}
     if #failed > 0 then log("[test]   gave up on: " .. table.concat(failed, ", ")) end
     if (t.deaths or 0) > 0 then

@@ -89,8 +89,9 @@ T.describe("ResourceManager", function()
     T.falsy(manager:get_resources(player, "iron-plate", 10, GoalMachine:new(), true), "get_resources")
   end)
 
-  T.it("starts no module the bot gave up on", function()
+  T.it("starts no module the bot gave up on: smelts by hand instead", function()
     storage.failed_goals = { [1] = { "IronColumn4", "BurnerToFurnace" } }
-    T.eq(manager:best_resource_source(player, "iron-plate"), nil, "source")
+    T.eq(getmetatable(manager:best_resource_source(player, "iron-plate")), HandSmeltResourceSource, "source")
+    T.eq(manager:best_resource_source(player, "wood"), nil, "nothing smelts into wood, and no tree here")
   end)
 end)
