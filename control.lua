@@ -23,6 +23,13 @@ require 'controllers/tasks/research_trigger_task'
 require 'controllers/tasks/research_task'
 require 'controllers/tasks/growth_task'
 require 'util/power'
+require 'util/bottleneck'
+require 'util/supply_chain'
+require 'util/economy'
+require 'util/strategy'
+require 'util/calibration'
+require 'util/evaluation'
+require 'controllers/tasks/plan_task'
 require 'controllers/managers/chest_resource_source'
 require 'controllers/managers/build_module_resource_source'
 require 'controllers/managers/research_resource_source'
@@ -74,6 +81,7 @@ local persistent_classes = {
   TakeFromChestTask = TakeFromChestTask,
   MakeRoomTask = MakeRoomTask,
   ProductionGoalTask = ProductionGoalTask,
+  PlanTask = PlanTask,
 }
 for name, class in pairs(persistent_classes) do
   class.__index = class
@@ -136,6 +144,9 @@ function AIMod.tick_bot(player, machine)
   end
 
   if(not machine:achieved{ player=player }) then
+    Bottleneck.tick(player, machine);
+    Calibration.tick(player);
+    Evaluation.tick(player);
     machine:tick{ player=player }
   else
     AIMod.goals_done(player);
@@ -169,6 +180,44 @@ function AIMod.module_list()
   return lines;
 end
 
+-- What growth would build next and why (GrowthTask.plan, nil when nothing
+-- is left), and the supply chain it looked at.
+function AIMod.chain(player)
+  local spent_before;
+  local machine = storage.goal_machines and storage.goal_machines[player.index];
+  local entry = machine and machine.goals;
+  while(entry ~= nil) do
+    if(getmetatable(entry.current) == GrowthTask) then spent_before = entry.current.spent_before; end
+    entry = entry.next;
+  end
+  local plan = GrowthTask.plan(player, Bottleneck.since(player, spent_before));
+  return plan, plan and plan.chain or SupplyChain.analyze(player, {research=GrowthTask.next_research(player)});
+end
+
+-- Lines for /aimod-chain: AIMod.chain, the plan first with the planner's
+-- ranking (util/economy.lua), then every link of the chain, least covered first.
+function AIMod.chain_lines(player)
+  local plan, chain = AIMod.chain(player);
+  local lines = {};
+  if(plan) then
+    lines[1] = string.format("next: %s for %s (%s)%s", plan.planned.name, plan.item, plan.reason,
+      chain.research and (", research: " .. chain.research .. " in " .. chain.labs .. " labs") or "");
+    for i, entry in ipairs(plan.ranking or {}) do
+      local rest = {};
+      for j = 2, #entry.order do rest[#rest + 1] = entry.order[j].name; end
+      lines[#lines + 1] = string.format("%d. %s first, then %s and so on: in %d min %d plates/min for good; lacking %s",
+        i, entry.module.name, table.concat(rest, ", "), Economy.HORIZON, math.floor(entry.development + 0.5),
+        GrowthTask.shortage_text(entry.shortage));
+    end
+  else
+    lines[1] = "no module left to build";
+  end
+  for i, line in ipairs(SupplyChain.lines(chain)) do
+    lines[#lines + 1] = line;
+  end
+  return lines;
+end
+
 -- Draws where the bot would build module `name` for a minute; returns what
 -- to tell the player.
 function AIMod.show_plan(player, name)
@@ -190,6 +239,20 @@ commands.add_command("aimod-power", "What the AIMod bot's electric networks make
   for i, line in ipairs(Power.lines(player)) do
     player.print("AIMod power, " .. line);
   end
+end)
+
+commands.add_command("aimod-chain", "What the AIMod bot's modules make against what its base needs, item by item, and what it builds next.", function(command)
+  local player = command.player_index and game.get_player(command.player_index);
+  if(not player) then return end
+  for i, line in ipairs(AIMod.chain_lines(player)) do
+    player.print("AIMod chain, " .. line);
+  end
+end)
+
+commands.add_command("aimod-evaluation", "How far the AIMod bot's base has come: milestones, what went into buildings and research, surplus, idle time.", function(command)
+  local player = command.player_index and game.get_player(command.player_index);
+  if(not player) then return end
+  player.print("AIMod " .. Evaluation.line(Evaluation.report(player)));
 end)
 
 commands.add_command("aimod-modules", "Lists the modules the AIMod bot builds (blueprints/library.lua).", function(command)

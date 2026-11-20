@@ -87,11 +87,13 @@ function PlaceBuildingTask:tick (args)
       for i, inv in ipairs(inventories) do
         if(inv.get_item_count(self.type) > 0) then
           -- create first, so a failed placement doesn't eat the item
+          -- an assembling machine starts on its module's recipe
           local entity = player.surface.create_entity{
             name=self.type,
             position=self.position,
             direction=self.direction,
-            force=player.force
+            force=player.force,
+            recipe=self.building and self.building.recipe or nil
           };
           if(entity) then
             inv.remove({name=self.type, count=1});

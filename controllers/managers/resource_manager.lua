@@ -186,5 +186,5 @@ function ResourceManager:get_resources(player, type, qty, machine, optional)
     return false;
   end
   source:gather{type=type, qty=qty, player=player, machine=machine}
-  return true;
+  return true, source;
 end

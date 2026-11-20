@@ -42,11 +42,25 @@ function HandSmeltTask.recipe(player, item)
   return nil;
 end
 
+-- The furnace for `ingredient`: the one remembered, else the one a task
+-- had built (storage.hand_furnace_builds: its building table, whose entity
+-- PlaceBuildingTask sets). The task that placed it may be gone by then:
+-- done once the module it waited for made enough, before it looked at the
+-- furnace again - and the next task put down a furnace of its own.
 local function placed_furnace(player, ingredient)
   local furnaces = storage.hand_furnaces and storage.hand_furnaces[player.index];
   local furnace = furnaces and furnaces[ingredient];
   if(furnace and furnace.valid) then
     return furnace;
+  end
+  local builds = storage.hand_furnace_builds and storage.hand_furnace_builds[player.index];
+  local built = builds and builds[ingredient] and builds[ingredient].entity;
+  if(built and built.valid) then
+    storage.hand_furnaces = storage.hand_furnaces or {};
+    storage.hand_furnaces[player.index] = storage.hand_furnaces[player.index] or {};
+    storage.hand_furnaces[player.index][ingredient] = built;
+    builds[ingredient] = nil;
+    return built;
   end
   return nil;
 end
@@ -168,6 +182,10 @@ function HandSmeltTask:placeFurnace(args)
   end
   log("Placing a " .. HandSmeltTask.FURNACE .. " for " .. self.item .. " at " .. spot.x .. ", " .. spot.y, "INFO");
   self.building = {type=HandSmeltTask.FURNACE};
+  -- remembered at once, for whichever task comes next (see placed_furnace)
+  storage.hand_furnace_builds = storage.hand_furnace_builds or {};
+  storage.hand_furnace_builds[player.index] = storage.hand_furnace_builds[player.index] or {};
+  storage.hand_furnace_builds[player.index][self.recipe_data.ingredient] = self.building;
   args.machine:pushSingle(BuildBuildingTask:new{type=HandSmeltTask.FURNACE, position=spot, building=self.building});
 end
 
@@ -180,6 +198,8 @@ function HandSmeltTask:furnace(player)
     storage.hand_furnaces[player.index] = storage.hand_furnaces[player.index] or {};
     storage.hand_furnaces[player.index][ingredient] = entity;
     self.building = nil;
+    local builds = storage.hand_furnace_builds and storage.hand_furnace_builds[player.index];
+    if(builds) then builds[ingredient] = nil; end
   end
   return placed_furnace(player, ingredient);
 end

@@ -13,6 +13,10 @@ require 'util/inventories'
    - optional: boolean; (Optional) give up at once when nothing provides
                the item, instead of looking again every few seconds (for
                fetching things early, see WaitForOutputTask)
+   - from_map: boolean; (Optional) only from the map (ore, trees, rocks),
+               by hand, and give up at once when the map has none near: a
+               WaitForOutputTask mining its own item meanwhile, which a
+               module source would only send back to the wait
 ]]
 GatherResourceTask = Task:new{goalSet=false}
 local log = Logger.makeLogger("GatherResourceTask");
@@ -37,9 +41,23 @@ function GatherResourceTask:tick (args)
     return;
   end
 
-  local found = storage.resource_managers[player.index]:get_resources(player, self.type, self.qty, args.machine, self.optional);
+  local manager = storage.resource_managers[player.index];
+  if(self.from_map) then
+    local natural = manager:find_natural_source(player, self.type);
+    if(natural) then
+      natural:gather{type=self.type, qty=self.qty, player=player, machine=args.machine};
+      self.by_hand = true;
+    else
+      self.gave_up = true;
+    end
+    return;
+  end
+  local found, source = manager:get_resources(player, self.type, self.qty, args.machine, self.optional);
   if(found) then
     self.retry_at = nil;
+    -- the bot's own hands: mined from the map or smelted by hand (Bottleneck counts that time)
+    local kind = getmetatable(source);
+    self.by_hand = kind == GroundResourceSource or kind == TreeResourceSource or kind == HandSmeltResourceSource;
   elseif(self.optional) then
     self.gave_up = true;
   else

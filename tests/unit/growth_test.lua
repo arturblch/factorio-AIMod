@@ -72,32 +72,58 @@ T.describe("GrowthTask", function()
     T.eq(next_product(), "coal", "3.6 coal a minute burnt, none made")
   end)
 
-  -- two coal pairs make 51 a minute
-  T.it("then the product furthest behind its share", function()
+  -- the iron pair, three coal pairs (76.5 coal a minute) and the stone drill
+  local function base()
     built(BurnerToFurnaceModule, "iron-ore", 0)
-    built(BurnerToBurnerModule, "coal", 10)
-    built(BurnerToBurnerModule, "coal", 20)
-    T.eq(next_product(), "copper-plate", "copper 0 of 1 before iron 15 of 2")
+    for _, x in ipairs({ 10, 20, 30 }) do built(BurnerToBurnerModule, "coal", x) end
+    built(ModuleLibrary.get("StoneToChest"), "stone", 40)
+  end
+
+  T.it("may build one module per product: plates, coal, and the stone they take", function()
+    base() -- with no iron module yet the producer of plates would be the pair
+    local names = {}
+    for _, candidate in ipairs(GrowthTask.candidates(player)) do
+      names[#names + 1] = candidate.item .. " " .. candidate.module.name
+    end
+    T.same(names, { "copper-plate CopperColumn4", "iron-plate IronColumn4", "coal CoalRing4", "stone StoneToChest" }, "candidates")
   end)
 
-  T.it("adds coal before a module the coal wouldn't keep up with", function()
-    built(BurnerToFurnaceModule, "iron-ore", 0)
-    built(BurnerToBurnerModule, "coal", 10)
-    -- copper column next: (3.6 + 14.4) x 2 = 36 of one pair's 25.5
-    T.eq(next_product(), "coal", "coal before the copper column")
-    built(BurnerToBurnerModule, "coal", 20)
-    T.eq(next_product(), "copper-plate", "36 of two pairs' 51: copper")
-    built(ModuleLibrary.get("CopperColumn4"), "copper-ore", 30)
-    -- iron column next: (18 + 14.4) x 2 = 64.8 > 51
-    T.eq(next_product(), "coal", "coal before the iron column")
+  T.it("builds the first of what the planner ranks best", function()
+    base()
+    local plan = GrowthTask.plan(player)
+    T.eq(plan.reason, "plan", "planned")
+    T.eq(#plan.ranking, 4, "every candidate ranked")
+    T.same({ plan.item, plan.planned }, { plan.ranking[1].item, plan.ranking[1].module }, "the best")
+    for i = 2, #plan.ranking do
+      T.falsy(Economy.better(plan.ranking[i], plan.ranking[i - 1]), "best first")
+    end
+    T.eq(plan.ranking[1].order[1], plan.planned, "its order starts with it")
+    T.truthy(GrowthTask.why(plan):find("^plan: " .. plan.planned.name), GrowthTask.why(plan))
+  end)
+
+  T.it("builds plates once stone and coal are plenty", function()
+    base()
+    player = Fakes.player{ surface = Lab.surface(), items = { stone = 2000, coal = 2000 } }
+    local item = next_product()
+    T.truthy(item == "copper-plate" or item == "iron-plate", "plates, not " .. tostring(item))
+  end)
+
+  T.it("counts buildings in the inventory as what they are made of", function()
+    base()
+    player = Fakes.player{ surface = Lab.surface(), items = { ["burner-mining-drill"] = 2, coal = 100 } }
+    local state = Economy.state(player, { ModuleLibrary.get("IronColumn4") })
+    T.same({ state.stock["iron-plate"], state.stock.stone, #state.built }, { 18, 10, 5 }, "2 drills: 18 plates, 10 stone")
+    -- the iron pair's drill and furnace and the stone drill keep 20 each
+    T.eq(state.stock.coal, 100 - 3 * 20, "the coal beyond what the burners keep")
   end)
 
   T.it("skips what it gave up on", function()
-    built(BurnerToFurnaceModule, "iron-ore", 0)
-    built(BurnerToBurnerModule, "coal", 10)
-    built(BurnerToBurnerModule, "coal", 20)
+    base()
     storage.failed_goals = { [1] = { "CopperColumn4", "BurnerToFurnaceCopper" } }
-    T.eq(next_product(), "iron-plate", "iron, no bricks")
+    for _, candidate in ipairs(GrowthTask.candidates(player)) do
+      T.truthy(candidate.item ~= "copper-plate", "no copper module left")
+    end
+    T.truthy(next_product() ~= "copper-plate", "no copper")
   end)
 
   T.it("refuels a module first, both buildings in one trip", function()
@@ -116,12 +142,52 @@ T.describe("GrowthTask", function()
     T.same({ getmetatable(tasks[1]), tasks[1].type, tasks[1].qty }, { CollectModuleOutputTask, "iron-plate", 50 }, "collect")
   end)
 
-  T.it("looks after the nearest module", function()
-    built(BurnerToFurnaceModule, "iron-ore", 0)
+  T.it("fuels the nearest module first", function()
+    local near = built(BurnerToFurnaceModule, "iron-ore", 0)
     local far = built(BurnerToFurnaceModule, "iron-ore", 40)
     player.position = { x = 40, y = 0 }
     local tasks = GrowthTask.upkeep(player)
-    T.eq(tasks[2].building, far.buildings[1], "the far one is nearer the player")
+    local order = {}
+    for i = 2, 5 do
+      order[#order + 1] = (tasks[i].building == far.buildings[1] or tasks[i].building == far.buildings[2]) and "far" or "near"
+    end
+    T.same(order, { "far", "far", "near", "near" }, "the far one is nearer the player, both in one round")
+    T.eq(tasks[1].qty, 80, "coal for both")
+  end)
+
+  T.it("a round tops up every burner below half, with all the coal of the coal modules first", function()
+    local low = built(BurnerToFurnaceModule, "iron-ore", 0)
+    fuel_all(low, 2)
+    local half = built(BurnerToFurnaceModule, "iron-ore", 10)
+    fuel_all(half, 8)
+    local full = built(BurnerToFurnaceModule, "iron-ore", 20)
+    fuel_all(full, 15)
+    local coal = built(BurnerToBurnerModule, "coal", 30)
+    for i = 1, 2 do coal:entity(i).get_fuel_inventory().insert{ name = "coal", count = 30 } end
+    local tasks = GrowthTask.upkeep(player)
+    T.same({ getmetatable(tasks[1]), tasks[1].module, tasks[1].all }, { CollectModuleOutputTask, coal, true }, "all the coal first")
+    T.same({ getmetatable(tasks[2]), tasks[2].type, tasks[2].qty }, { GatherResourceTask, "coal", 60 }, "then what is missing: 2 x 18 + 2 x 12")
+    local fueled = {}
+    for i = 3, #tasks do
+      T.eq(getmetatable(tasks[i]), FuelBuildingTask, "fuel " .. i)
+      fueled[tasks[i].building] = true
+    end
+    T.eq(#tasks, 6, "four burners")
+    T.truthy(fueled[low.buildings[1]] and fueled[half.buildings[2]], "the low one and the one below half")
+    T.falsy(fueled[full.buildings[1]], "not the one above half")
+  end)
+
+  T.it("needs no trip to the coal with enough in the inventory", function()
+    built(BurnerToFurnaceModule, "iron-ore", 0)
+    player = Fakes.player{ surface = Lab.surface(), items = { coal = 100 } }
+    local tasks = GrowthTask.upkeep(player)
+    T.same({ #tasks, getmetatable(tasks[1]), getmetatable(tasks[2]) }, { 2, FuelBuildingTask, FuelBuildingTask }, "straight to the burners")
+  end)
+
+  T.it("waits for no round while every burner has enough", function()
+    local module = built(BurnerToFurnaceModule, "iron-ore", 0)
+    fuel_all(module, 6)
+    T.eq(GrowthTask.fuel_round(player), nil, "6 of each: not yet")
   end)
 
   T.it("builds one more module and counts the goals before it as done", function()
@@ -175,5 +241,111 @@ T.describe("A module the bot just failed to walk to", function()
     task:tick{ player = player, machine = machine }
     T.truthy(task:achieved{ player = player }, "done, the gather task looks elsewhere")
     T.eq(top(machine), task, "no walk pushed")
+  end)
+end)
+
+T.describe("Bottleneck", function()
+  local machine
+  T.before_each(function()
+    Lab.reset()
+    storage.resource_managers[1] = ResourceManager:new()
+    storage.time_spent = nil
+    machine = GoalMachine:new()
+    machine:pushSingle(GrowthTask:new{})
+  end)
+  local function gather(type, by_hand)
+    local task = GatherResourceTask:new{ type = type, qty = 10 }
+    task.by_hand = by_hand
+    return task
+  end
+
+  T.it("counts waiting for a module", function()
+    machine:pushSingle(WaitForOutputTask:new{ type = "iron-plate", qty = 5 })
+    T.eq(Bottleneck.item(machine), "iron-plate", "waiting")
+  end)
+
+  T.it("counts mining by hand, walking there too", function()
+    machine:pushSingle(CraftRecipeTask:new{ recipe = "burner-mining-drill", qty = 1 })
+    machine:pushSingle(gather("stone", true))
+    machine:pushSingle(MoveToPointTask:new{ x = 5, y = 5 })
+    T.eq(Bottleneck.item(machine), "stone", "stone by hand")
+  end)
+
+  T.it("counts the ore of a hand smelt for its plates", function()
+    machine:pushSingle(HandSmeltTask:new{ item = "iron-plate", qty = 10 })
+    machine:pushSingle(gather("iron-ore", true))
+    T.eq(Bottleneck.item(machine), "iron-plate", "the smelt's product")
+  end)
+
+  T.it("doesn't count collecting from a module, building or a gather the modules serve", function()
+    machine:pushSingle(gather("coal", false))
+    machine:pushSingle(CollectModuleOutputTask:new{ type = "coal", qty = 10 })
+    T.eq(Bottleneck.item(machine), nil, "collecting")
+    local other = GoalMachine:new()
+    other:pushSingle(gather("stone", true))
+    other:pushSingle(PlaceBuildingTask:new{ type = "stone-furnace", position = { x = 0, y = 0 } })
+    T.eq(Bottleneck.item(other), nil, "building")
+    local third = GoalMachine:new()
+    third:pushSingle(gather("iron-plate", false))
+    T.eq(Bottleneck.item(third), nil, "from a module")
+  end)
+
+  T.it("adds up the ticks, and tells what was spent since a snapshot", function()
+    local player = Fakes.player{ surface = Lab.surface() }
+    machine:pushSingle(WaitForOutputTask:new{ type = "iron-plate", qty = 5 })
+    Bottleneck.tick(player, machine)
+    local before = Bottleneck.snapshot(player)
+    Bottleneck.tick(player, machine)
+    Bottleneck.tick(player, machine)
+    T.same(Bottleneck.spent(player), { ["iron-plate"] = 3 }, "spent")
+    T.same(Bottleneck.since(player, before), { ["iron-plate"] = 2 }, "since")
+  end)
+
+  T.it("knows a gather the map serves is by hand", function()
+    Lab.ore("stone", 3, 0)
+    local player = Fakes.player{ surface = Lab.surface() }
+    local task = GatherResourceTask:new{ type = "stone", qty = 5 }
+    machine:pushSingle(task)
+    task:tick{ player = player, machine = machine }
+    T.truthy(task.by_hand, "by hand")
+  end)
+end)
+
+T.describe("GrowthTask and the time it spent", function()
+  local player
+  T.before_each(function()
+    Lab.reset()
+    storage.resource_managers[1] = ResourceManager:new()
+    player = Fakes.player{ surface = Lab.surface() }
+    -- all fuelled, so no refuel round comes first
+    fuel_all(built(BurnerToFurnaceModule, "iron-ore", 0), 10)
+    for _, x in ipairs({ 10, 20, 30 }) do fuel_all(built(BurnerToBurnerModule, "coal", x), 10) end
+    fuel_all(built(ModuleLibrary.get("StoneToChest"), "stone", 40), 10)
+  end)
+
+  -- the planner doesn't go by it; the log shows it
+  T.it("counts it from its last module for the item on", function()
+    storage.goals_done = { [1] = true }
+    storage.failed_goals = { [1] = { "SteamPower" } } -- five modules: no power step first
+    storage.time_spent = { [1] = { ["iron-plate"] = 4000, stone = 1000, coal = 500 } }
+    local machine = GoalMachine:new()
+    local growth = GrowthTask:new{}
+    machine:pushSingle(growth)
+    growth:tick{ player = player, machine = machine }
+    -- the search runs as a task of its own first, a few plans a tick
+    local plan_task = top(machine)
+    T.eq(getmetatable(plan_task), PlanTask, "planning")
+    local ticks = 0
+    while not plan_task:achieved{ player = player, machine = machine } do
+      plan_task:tick{ player = player, machine = machine }
+      ticks = ticks + 1
+    end
+    T.truthy(ticks > 1, "over " .. ticks .. " ticks")
+    machine:tick{ player = player } -- pops the done search
+    growth:tick{ player = player, machine = machine }
+    local item = top(machine).item
+    T.eq(getmetatable(top(machine)), ProductionGoalTask, "then the module")
+    T.same(growth.spent_before, { [item] = storage.time_spent[1][item] }, "remembered for " .. item)
+    T.eq(Bottleneck.since(player, growth.spent_before)[item], nil, "nothing since for " .. item)
   end)
 end)

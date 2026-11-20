@@ -4,6 +4,8 @@ require 'util/logger'
 require 'controllers/tasks/build_building_task'
 require 'controllers/tasks/craftRecipeTask'
 require 'controllers/managers/module_resource_source'
+require 'controllers/managers/research_resource_source'
+require 'controllers/tasks/research_trigger_task'
 require 'util/inventories'
 require 'util/recipes'
 require 'controllers/modules/library'
@@ -60,7 +62,9 @@ function BuildModuleTask:retryElsewhere(player)
   local missing = {};
   for i, building in ipairs(self.built.buildings) do
     local entity = building.entity;
-    if(entity and entity.valid) then
+    if(self.reuse and self.reuse[i]) then
+      -- not ours to pick up: it belongs to another module
+    elseif(entity and entity.valid) then
       player.mine_entity(entity, true); -- back into the inventory, fuel included
     else
       missing[#missing + 1] = building.type;
@@ -74,7 +78,7 @@ function BuildModuleTask:retryElsewhere(player)
   self.attempts = (self.attempts or 0) + 1;
   log(self.module.name .. " at " .. self.location.x .. ", " .. self.location.y .. " is missing " ..
     table.concat(missing, ", ") .. " (attempt " .. self.attempts .. ")", "WARN");
-  self.location, self.built, self.source, self.goal_set = nil, nil, nil, false;
+  self.location, self.built, self.source, self.goal_set, self.reuse = nil, nil, nil, false, nil;
   if(self.attempts >= MAX_ATTEMPTS) then
     self:fail(player, "could not build " .. self.module.name .. " after " .. self.attempts .. " attempts");
   end
@@ -102,7 +106,9 @@ function BuildModuleTask:needs (args)
   end
   local counts = {};
   for i, building in pairs(self.module.buildings) do
-    counts[building.type] = (counts[building.type] or 0) + 1;
+    if(not (self.reuse and self.reuse[i])) then
+      counts[building.type] = (counts[building.type] or 0) + 1;
+    end
   end
   for type, count in pairs(counts) do
     add(type, count);
@@ -228,12 +234,17 @@ function BuildModuleTask:canBuildAtPosition(player, position)
       return false;
     end
     for i, entity in pairs(player.surface.find_entities_filtered{position=offsetPosition, force=player.force}) do
-      if(entity.type ~= "character") then
+      -- (a building of ours the module takes over stands where its own would)
+      if(entity.type ~= "character" and not (self.reusing and self.reusing[entity.unit_number])) then
         return false;
       end
     end
     local tile_area = {{offsetPosition.x - 0.5, offsetPosition.y - 0.5}, {offsetPosition.x + 0.5, offsetPosition.y + 0.5}};
     if(player.surface.count_entities_filtered{area=tile_area, type="cliff", limit=1} > 0) then
+      return false;
+    end
+    -- a module that mines nothing keeps off ore, which later modules mine
+    if(self.module.resource == nil and player.surface.count_entities_filtered{area=tile_area, type="resource", limit=1} > 0) then
       return false;
     end
     if(item.resource ~= nil) then
@@ -336,9 +347,115 @@ local function shore_tiles(surface, origin, radius)
   return result;
 end
 
+-- The module's first electric pole: its building index and prototype.
+local function first_pole(module)
+  for i, building in ipairs(module.buildings) do
+    local prototype = prototypes.entity[building.type];
+    if(prototype and prototype.type == "electric-pole") then
+      return i, prototype;
+    end
+  end
+  return nil;
+end
+
+-- A science module (module.packs) whose lab can be one of ours: the spot
+-- where its own lab would stand on a lab we have (the power module's), so
+-- the module's inserter feeds that one and its lab isn't built (self.reuse:
+-- building index -> entity), with the module's pole in wire reach of one of
+-- `poles`. Nil when no lab of ours has room around it.
+function BuildModuleTask:findAtOurLab(player, poles, pole_offset, pole_prototype)
+  if(not self.module.packs) then
+    return nil;
+  end
+  local lab_index;
+  for i, building in ipairs(self.module.buildings) do
+    if(prototypes.entity[building.type].type == "lab") then lab_index = i; end
+  end
+  if(not lab_index) then
+    return nil;
+  end
+  local lab_offset = self.module.buildings[lab_index].position;
+  local labs = player.surface.find_entities_filtered{force=player.force, name=self.module.buildings[lab_index].type};
+  table.sort(labs, function(a, b)
+    return util.distance(player.position, a.position) < util.distance(player.position, b.position);
+  end);
+  for i, lab in ipairs(labs) do
+    local corner = {x=math.floor(lab.position.x - lab_offset.x + 0.5), y=math.floor(lab.position.y - lab_offset.y + 0.5)};
+    local position = {x=corner.x + 0.5, y=corner.y + 0.5};
+    local pole_at = {x=corner.x + pole_offset.x, y=corner.y + pole_offset.y};
+    local wired = false;
+    for j, pole in ipairs(poles) do
+      local reach = math.min(pole.prototype.get_max_wire_distance(), pole_prototype.get_max_wire_distance());
+      wired = wired or util.distance(pole.position, pole_at) <= reach - 0.01;
+    end
+    self.reusing = {[lab.unit_number] = true};
+    local fits = wired and not self:isBadSpot(position) and self:canBuildAtPosition(player, position);
+    self.reusing = nil;
+    if(fits) then
+      self.reuse = {[lab_index] = lab};
+      return position;
+    end
+  end
+  return nil;
+end
+
+-- For a module that runs on our power (module.powered): the spot where its
+-- first pole is as close as it can be to a pole of ours on a network, yet
+-- within the wire reach of both, so the game wires them together. Our poles
+-- nearest the player first.
+function BuildModuleTask:findPoweredLocation(player)
+  local index, prototype = first_pole(self.module);
+  if(not index) then
+    return nil;
+  end
+  local offset = self.module.buildings[index].position;
+  local poles = {};
+  for i, pole in pairs(player.surface.find_entities_filtered{force=player.force, type="electric-pole"}) do
+    if(pole.electric_network_id) then poles[#poles + 1] = pole; end
+  end
+  table.sort(poles, function(a, b)
+    return util.distance(player.position, a.position) < util.distance(player.position, b.position);
+  end);
+  local reused = self:findAtOurLab(player, poles, offset, prototype);
+  if(reused) then
+    return reused;
+  end
+  for i, pole in ipairs(poles) do
+    local reach = math.min(pole.prototype.get_max_wire_distance(), prototype.get_max_wire_distance());
+    local center = {x=math.floor(pole.position.x) + 0.5, y=math.floor(pole.position.y) + 0.5};
+    local candidates = {};
+    local r = math.floor(reach);
+    for dx = -r, r do
+      for dy = -r, r do
+        local at = {x=center.x + dx, y=center.y + dy};
+        local distance = util.distance(pole.position, at);
+        if((dx ~= 0 or dy ~= 0) and distance <= reach - 0.01) then
+          candidates[#candidates + 1] = {at=at, distance=distance};
+        end
+      end
+    end
+    table.sort(candidates, function(a, b)
+      if(a.distance ~= b.distance) then return a.distance < b.distance; end
+      if(a.at.y ~= b.at.y) then return a.at.y < b.at.y; end
+      return a.at.x < b.at.x;
+    end);
+    for j, candidate in ipairs(candidates) do
+      -- the pole's tile is corner + offset, the location the center of tile (0, 0)
+      local position = {x=math.floor(candidate.at.x - offset.x) + 0.5, y=math.floor(candidate.at.y - offset.y) + 0.5};
+      if(not self:isBadSpot(position) and self:canBuildAtPosition(player, position)) then
+        return position;
+      end
+    end
+  end
+  return nil;
+end
+
 -- Center of the module's geometry tile (0, 0), or nil: the spot nearest the
 -- search origin where it fits.
 function BuildModuleTask:findLocation(player)
+  if(self.module.powered and self.module.resource == nil) then
+    return self:findPoweredLocation(player);
+  end
   local origin = self:searchOrigin(player);
   local anchor = BuildModuleTask.anchor(self.module);
   if(self.module.power) then
@@ -385,14 +502,15 @@ function BuildModuleTask:tick (args)
       args.machine:pushSingle(BuildModuleTask:new{module=first});
       return;
     end
-    if(self.module.resource == nil) then
+    if(self.module.resource == nil and not self.module.powered) then
       self:fail(player, "don't know where to put " .. self.module.name .. ": it needs no resource");
       return;
     end
     self.location = self:findLocation(player);
     if(not self.location) then
-      self:fail(player, "no place to build " .. self.module.name .. ": no suitable " ..
-        self.module.resource .. " spot within " .. SEARCH_RADII[#SEARCH_RADII] .. " tiles");
+      local where = self.module.resource and (self.module.resource .. " spot within " .. SEARCH_RADII[#SEARCH_RADII] .. " tiles")
+        or "spot in wire reach of our poles";
+      self:fail(player, "no place to build " .. self.module.name .. ": no suitable " .. where);
       return;
     end
     log("Building " .. self.module.name .. " at " .. self.location.x .. ", " .. self.location.y, "INFO");
@@ -403,13 +521,29 @@ function BuildModuleTask:tick (args)
   -- get the buildings first, the spot is reserved in self.location
   local required_buildings = {};
   for i, building in pairs(self.module.buildings) do
-    required_buildings[building.type] = (required_buildings[building.type] or 0) + 1;
+    if(not (self.reuse and self.reuse[i])) then -- one of ours stands there already
+      required_buildings[building.type] = (required_buildings[building.type] or 0) + 1;
+    end
   end
   -- what is still in the hand-craft queue counts: it is crafted on the way
   -- to the spot, and PlaceBuildingTask waits for it if need be
   local missing = false;
   for type, count in pairs(required_buildings) do
     local inv_count = Inventories.count_with_queue(player, type);
+    local recipe = player.force.recipes[type];
+    if(inv_count < count and recipe and not recipe.enabled) then
+      -- a locked recipe (the lab and the pole wait for electronics, which 10
+      -- copper plates unlock): research it first, or CraftRecipeTask would
+      -- wait for ever
+      local tech = ResearchResourceSource.technology_for(player.force, type);
+      if(not tech) then
+        self:fail(player, "can't build " .. self.module.name .. ": the recipe of " .. type .. " is locked behind research");
+        return;
+      end
+      log("Researching " .. tech .. " first: " .. self.module.name .. " needs " .. type, "INFO");
+      args.machine:pushSingle(ResearchTriggerTask:new{tech=tech});
+      return;
+    end
     if(inv_count < count) then
       local required_count = count - inv_count;
       log("We require " .. required_count .. " more " .. type .. " for this module", "INFO");
@@ -432,11 +566,16 @@ function BuildModuleTask:tick (args)
   local corner = {x=math.floor(self.location.x), y=math.floor(self.location.y)};
   local tasks = {};
   for i, building in pairs(module.buildings) do
-    local building_position = {x=corner.x + building.position.x, y=corner.y + building.position.y};
-    tasks[#tasks + 1] = BuildBuildingTask:new{type=building.type,
-                                              building=building,
-                                              position=building_position,
-                                              direction=building.direction or defines.direction.north}
+    local reused = self.reuse and self.reuse[i];
+    if(reused and reused.valid) then
+      building.entity = reused; -- ours already (the power module's lab)
+    else
+      local building_position = {x=corner.x + building.position.x, y=corner.y + building.position.y};
+      tasks[#tasks + 1] = BuildBuildingTask:new{type=building.type,
+                                                building=building,
+                                                position=building_position,
+                                                direction=building.direction or defines.direction.north}
+    end
   end
   -- light it up right away so it produces while the bot does other things
   for i, task in ipairs(module:startTasks()) do

@@ -63,6 +63,10 @@ local BLUEPRINTS = {
   --  LLLSSS   pole (p) reaching the engine and the lab (L)
   --  LLLOOO>W
   ["steam-power"] = "0eNp9kNFqwzAMRX/F6FkpxHMy6t/Y4yjDSdVW4NjGcdaW4n8fSdotrNnebKRzdKUbNHagENkl0DewpiELGt4SmU4Ef6YozpxOwghrGi2ME/5w6E8+kghDF1AY0Xi2FMdXP1HkjuwIEDhRB3oxAIFb73rQ7zfo+eiMHWc60xFomODiDmcEdnu6gC4zrjRb0yx6ZN4hkEucmGb79Ll+uKFrKIIu8QHOYQEh+J4TezdKL6DVpkK4gq7zOO8XLr/xx/LFuPyzpX5YNlVG2HOkdq6qFesLrq7+ZzS5qdbCqR9NZ6wtyFKbIrdF8HbFJv+3Vbg88RNd3mk10juET4r9VK1qua2UVNttXapXmfMXCevE+A==",
+  --  AAApLLL   red science: an assembling machine (A) making automation
+  --  AAA<LLL   science packs, an inserter taking them into a lab (L), a pole (p)
+  --  AAA LLL   reaching all three and wired to the power module's
+  ["red-science"] = "0eNp9kNFqwzAMRX/F6NkZS5p01J/R11GG4ohO1FaC7YyVkn8fTtu0o92ejJDuPff6BK0baQgsCcwJHLbkwMCWOhUtk1gyCkVhjORbx7JXHu0nCymPhzzimHqPiXu5CtSA9hB1lrFEComCYkm9QuWwBQ2cyIO5A2tg20sE836CyHtBl7MIegIDN0BxARQZAJMGlo6+wZSTfqLLrNtNNe00kCROTGfQPBw/ZPQtBTClXoBL1+LStShBw9BHzikyIkNfGg3H+Z00BLI8/J/2gVgtxOs3PVJWvygdB7LnbVk9cVzp+/IPZs2d2RN1vaijR+cKcmRTYFsMvaO/o71mt52GLwpx3jbratPUVb3ZrMv6rZqmH2atzBw=",
   ["belt-line"] ="0eNqV1tFugjAUBuBXac51NWtpQXiAvcRiFtCzpQkW0xajMbz7As5MN6bnXEKb72+hf+AMTdvjPjifoDpDWzfYQgWv7oCi6YPHILbBtW0UnU+dqEWDbZLio+uDcD5iSBiicOPYdC+mzqP46IOvNxhBgku4g+omRYLbdD5C9XaG6D593Y7Bvt4hVJBC7eO+C2kx5sAgwfktHqFSg5yZPqUtvtNuZuthLQF9csnhJWm6OL37ftdggErJK3HZ5GLnvPOfi2mvIGHfRZdc58es4zT9NK0Bti7g5jKyGpf0y9U8N6O6Gc+1VNfw3ILqWp5bUt1c/nNS/r6y5eUh6KW9Z80MW5BZzWFXZDbjsCWZNRxWvZBdy3IV2c1Zria7BcvNyO6K5RqyW7JcSy/FCwtmtI1VN0Xvm2IVTtEbp1iVU/TOKVbpNL10itU6TW+dYtVO//nGXf8DHpy3bGmHOStjWPqJZRiWeWJZhpU/sX5adP+7MlOiyZlXCrKSPVBWZMU+UEqyUlyVtYQDhjgN2VyX1mhTlrkyhR6GL0ngeso=",
 };
 
@@ -88,12 +92,20 @@ return {
     -- power: built by GrowthTask once the burner base runs (plan 3.4); it
     -- makes no items, so no goal ever picks it
     {name="SteamPower", blueprint="steam-power", resource="water"},
+    -- research: red science packs from an assembling machine, once
+    -- automation is researched; GrowthTask builds it with its pole in reach
+    -- of ours (it needs no resource, only our electric network; plan 3.5)
+    {name="RedScience", blueprint="red-science"},
+    -- stone into a chest: no goal asks for stone (the map has it), but growth
+    -- builds it once mining stone by hand holds the bot up (GrowthTask,
+    -- util/bottleneck.lua: 40 stone a column of four pairs), and gathers
+    -- take the stone from its chest after that (plan 3.12)
+    {name="StoneToChest", blueprint="burner-chest", resource="stone", product="stone"},
     -- off: with burners, inserters and belts cost more and add buildings to
-    -- fuel for the same plates (/aimod-modules shows each one's score), and
-    -- a chest of stone is no goal of its own; /aimod-use can switch them on
+    -- fuel for the same plates (/aimod-modules shows each one's score);
+    -- /aimod-use can switch them on
     {name="IronToChest", blueprint="furnace-chest", resource="iron-ore", product="iron-plate", off=true},
     {name="IronBeltLine", blueprint="belt-line", resource="iron-ore", product="iron-plate", off=true},
-    {name="StoneToChest", blueprint="burner-chest", resource="stone", product="stone", off=true},
     -- off: eight pairs take too long to build (in 10 minutes of growth some
     -- were never finished)
     {name="IronColumn8", blueprint="furnace-column8", resource="iron-ore", product="iron-plate", off=true},

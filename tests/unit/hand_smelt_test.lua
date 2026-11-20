@@ -94,6 +94,23 @@ T.describe("HandSmeltTask", function()
     T.falsy(getmetatable(top(machine)) == BuildBuildingTask, "no second furnace")
   end)
 
+  T.it("uses the furnace it had built even when that task is gone", function()
+    -- the module the bot waited for made enough while the furnace went up:
+    -- the task was done before it looked at the furnace again
+    Lab.patch("iron-ore", 10, 10, 11, 11)
+    local player = player_with{ ["stone-furnace"] = 1, coal = 5 }
+    local task = smelt(5)
+    tick(task, player)
+    local furnace = Lab.entity("stone-furnace", { 14, 10 })
+    task.building.entity = furnace -- what PlaceBuildingTask does
+    machine = GoalMachine:new()
+    local next_time = smelt(5)
+    tick(next_time, player)
+    T.falsy(getmetatable(top(machine)) == BuildBuildingTask, "no second furnace")
+    T.eq(furnace.get_fuel_inventory().get_item_count("coal"), 1, "the first one fuelled")
+    T.eq(storage.hand_furnaces[1]["iron-ore"], furnace, "remembered")
+  end)
+
   T.it("goes on with the fuel that is still burning", function()
     local furnace = own_furnace()
     furnace.get_fuel_inventory().clear()
