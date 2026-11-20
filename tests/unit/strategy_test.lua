@@ -91,6 +91,13 @@ T.describe("Calibration", function()
     T.near(share.coal, (ring_rate * 0.5 + pair_rate) / (ring_rate + pair_rate), 1e-9, "weighted by rate")
   end)
 
+  T.it("counts a plate drill waiting for room as at work: nothing wants its plates yet", function()
+    local working, waiting = defines.entity_status.working, defines.entity_status.waiting_for_space_in_destination
+    local no_fuel = defines.entity_status.no_fuel
+    local column = stub(m("IronColumn4"), { working, waiting, waiting, no_fuel })
+    T.near(Calibration.availability({ column })["iron-plate"], 0.75, 1e-9, "3 of 4")
+  end)
+
   T.it("gives the model only what has been sampled long enough", function()
     local player = Fakes.player{ surface = Lab.surface() }
     storage.calibration = { [1] = { availability = { coal = 0.8, stone = 0.1, ["iron-plate"] = 0.1 },

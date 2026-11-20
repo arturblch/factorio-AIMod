@@ -7,7 +7,11 @@
   Every EVERY ticks, availability per item the working modules make: the
   share of their drills at work right now (not out of fuel, not waiting for
   room, not out of ore), weighted by each module's rate - a coal ring
-  standing full between refuel rounds makes less than its paper rate. It
+  standing full between refuel rounds makes less than its paper rate. For
+  anything but the fuel a drill waiting for room counts as at work: plates
+  and stone wait in their modules until something takes them (plan 4.11),
+  so a full furnace is plates nobody wants yet, not plates the module can't
+  make - counting it out, the model would see iron short and build more. It
   goes into a running average (WEIGHT of a new sample) in
   storage.calibration[player index]; Calibration.factors gives the model
   what has MIN_SAMPLES samples or more, until then it keeps its defaults
@@ -36,13 +40,15 @@ end
 -- {item = share of drills at work, weighted by rate} for `list` of modules.
 function Calibration.availability(list)
   local work, total = {}, {};
+  local fuel = GrowthTask and GrowthTask.FUEL;
   for i, module in ipairs(list) do
-    local drills, working = 0, 0;
+    local drills, working, waiting = 0, 0, 0;
     for j, building in ipairs(module.buildings) do
       local entity = module:entity(j);
       if(entity and entity.type == "mining-drill") then
         drills = drills + 1;
         if(entity.status == defines.entity_status.working) then working = working + 1; end
+        if(entity.status == defines.entity_status.waiting_for_space_in_destination) then waiting = waiting + 1; end
       end
     end
     if(drills > 0) then
@@ -51,7 +57,8 @@ function Calibration.availability(list)
         local rate = module:productionRate(output.type);
         if(rate > 0 and not counted[output.type]) then
           counted[output.type] = true;
-          work[output.type] = (work[output.type] or 0) + rate * working / drills;
+          local at_work = working + (output.type ~= fuel and waiting or 0);
+          work[output.type] = (work[output.type] or 0) + rate * at_work / drills;
           total[output.type] = (total[output.type] or 0) + rate;
         end
       end

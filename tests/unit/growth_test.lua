@@ -133,13 +133,18 @@ T.describe("GrowthTask", function()
     T.same({ getmetatable(tasks[2]), tasks[2].amount, getmetatable(tasks[3]) }, { FuelBuildingTask, 20, FuelBuildingTask }, "fuel")
   end)
 
-  T.it("empties a half full output", function()
+  T.it("empties a half full output of coal, and leaves plates where they are", function()
     local module = built(BurnerToFurnaceModule, "iron-ore", 0)
     fuel_all(module, 10)
     T.eq(GrowthTask.upkeep(player), nil, "nothing to do")
     module:entity(2).get_output_inventory().insert{ name = "iron-plate", count = 50 }
+    T.eq(GrowthTask.upkeep(player), nil, "plates wait until something takes them")
+    local pair = built(BurnerToBurnerModule, "coal", 10)
+    local half = prototypes.item.coal.stack_size / 2
+    for i = 1, 2 do pair:entity(i).get_fuel_inventory().insert{ name = "coal", count = 50 } end
     local tasks = GrowthTask.upkeep(player)
-    T.same({ getmetatable(tasks[1]), tasks[1].type, tasks[1].qty }, { CollectModuleOutputTask, "iron-plate", 50 }, "collect")
+    T.same({ getmetatable(tasks[1]), tasks[1].module, tasks[1].type }, { CollectModuleOutputTask, pair, "coal" }, "the coal")
+    T.truthy(tasks[1].qty >= half, "at least half a stack: " .. tasks[1].qty)
   end)
 
   T.it("fuels the nearest module first", function()
