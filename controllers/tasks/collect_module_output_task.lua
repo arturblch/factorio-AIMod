@@ -10,6 +10,8 @@ require 'controllers/tasks/moveToPointTask'
    - module: BaseModule
    - type: string; the product to collect
    - qty: number; how many the inventory should hold when done (a total)
+   - all: boolean; (optional) take all there is instead (the refuel round
+          takes all the coal of the coal modules in one trip)
 ]]
 CollectModuleOutputTask = Task:new()
 local log = Logger.makeLogger("CollectModuleOutputTask");
@@ -29,7 +31,7 @@ end
 function CollectModuleOutputTask:tick (args)
   local player = args.player;
   for i, output in ipairs(self.module:outputsForProduct(self.type)) do
-    local wanted = self.qty - Inventories.total_craftable_count(player, self.type);
+    local wanted = self.all and math.huge or (self.qty - Inventories.total_craftable_count(player, self.type));
     if(wanted <= 0) then
       break;
     end

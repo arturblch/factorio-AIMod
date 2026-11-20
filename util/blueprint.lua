@@ -20,11 +20,17 @@
      result, a chest) and puts into its drop position; a burner inserter
      carrying fuel fuels itself from it;
    - a furnace smelts what it gets (fuel goes to its fuel slot);
-   - outputs, where the bot takes the product: a furnace result no inserter
-     takes away, a chest that gets something, or the fuel slots of drills
-     fed coal by the module (keeping a few);
+   - an assembling machine makes its recipe (the blueprint's `recipe`) and
+     an inserter can take the products; a lab takes the science packs it
+     gets;
+   - outputs, where the bot takes the product: a furnace result or an
+     assembling machine's products no inserter takes away, a chest that gets
+     something, or the fuel slots of drills fed coal by the module (keeping
+     a few);
    - inputs: every burner the bot keeps fueled, i.e. that gets no fuel
      from the module; of those that do, the first gets fuel to start with.
+     And the ingredients of an assembling machine that no inserter brings
+     (slot "input"): the bot carries them.
   It also checks the layout (Blueprint.module's third result): errors make
   a blueprint useless as a module, warnings point at a weak layout.
 ]]
@@ -156,6 +162,35 @@ local function on_network(prototype)
   return prototype.electric_energy_source_prototype ~= nil or prototype.type == "generator";
 end
 
+-- The item products and ingredients of the recipe called `name`:
+-- {name = amount} each, or nil when there is no such recipe.
+local function recipe_items(name)
+  local recipe = name and prototypes.recipe[name];
+  if(not recipe) then
+    return nil;
+  end
+  local products, ingredients = {}, {};
+  for i, product in pairs(recipe.products) do
+    if(product.type == "item") then
+      products[product.name] = (products[product.name] or 0) + (product.amount or 1);
+    end
+  end
+  for i, ingredient in pairs(recipe.ingredients) do
+    if(ingredient.type == "item") then
+      ingredients[ingredient.name] = (ingredients[ingredient.name] or 0) + ingredient.amount;
+    end
+  end
+  return products, ingredients;
+end
+
+-- Whether a lab of `prototype` takes `item`.
+local function lab_takes(prototype, item)
+  for i, name in pairs(prototype.lab_inputs or {}) do
+    if(name == item) then return true; end
+  end
+  return false;
+end
+
 local function names(set)
   local list = {};
   for name in pairs(set) do list[#list + 1] = name; end
@@ -171,8 +206,11 @@ end
      "water" for a power module: an offshore pump (geometry tiles it needs
      water on are marked `tile = "water"`, its own `shore = true`), boilers
      the bot fuels, generators and consumers on poles. It makes no items
-     (`power = true`, no outputs).
+     (`power = true`, no outputs). None for a module without drills.
    - product: string; (optional) checked to be among the outputs
+  A module with buildings that run on electricity and no generator of its
+  own takes power from ours (`powered = true`): its poles must reach them.
+  The science packs its labs get are `packs` (a list of names).
   Returns the data for BaseModule:new and the checks {errors=, warnings=,
   flows=} (lists of strings), or nil and why not.
 ]]
@@ -190,8 +228,8 @@ function Blueprint.module(spec)
     return nil, "the blueprint has no entities";
   end
   local power = spec.resource == "water";
-  local ore = not power and mined_item(spec.resource);
-  if(not power and not ore) then
+  local ore = spec.resource and not power and mined_item(spec.resource);
+  if(spec.resource and not power and not ore) then
     return nil, "nothing to mine in " .. tostring(spec.resource);
   end
 
@@ -204,7 +242,8 @@ function Blueprint.module(spec)
       return nil, "unknown entity " .. entity.name;
     end
     local part = {prototype=prototype, kind=prototype.type, position=entity.position,
-                  direction=entity.direction or defines.direction.north, belt_end=entity.type};
+                  direction=entity.direction or defines.direction.north, belt_end=entity.type,
+                  recipe=prototype.type == "assembling-machine" and entity.recipe or nil};
     part.tiles = Blueprint.footprint(prototype, part.position, part.direction);
     if(part.kind == "mining-drill") then
       part.mines = mining_area(prototype, part.position);
@@ -264,6 +303,9 @@ function Blueprint.module(spec)
     end
     if(part.belt_end) then
       building.belt_end = part.belt_end; -- underground belt: "input" or "output"
+    end
+    if(part.recipe) then
+      building.recipe = part.recipe; -- an assembling machine's, set when it is placed
     end
     buildings[i] = building;
   end
@@ -332,6 +374,8 @@ function Blueprint.module(spec)
       end
     elseif(part.kind == "container") then
       for item in pairs(receives[i] or {}) do result[item] = true; end
+    elseif(part.kind == "assembling-machine") then
+      for item in pairs(recipe_items(part.recipe) or {}) do result[item] = true; end
     end
     return result;
   end
@@ -345,6 +389,10 @@ function Blueprint.module(spec)
   for i, part in ipairs(parts) do
     if(part.kind == "mining-drill" and power) then
       errors[#errors + 1] = label(i) .. ": a power module mines nothing";
+    elseif(part.kind == "mining-drill" and not ore) then
+      errors[#errors + 1] = label(i) .. ": a drill, but the module names no resource to mine";
+    elseif(part.kind == "assembling-machine" and not recipe_items(part.recipe)) then
+      errors[#errors + 1] = label(i) .. " has no recipe to make";
     elseif(part.kind == "mining-drill") then
       local j = at(offset(part, part.prototype.vector_to_place_result));
       part.drops_into = j;
@@ -389,8 +437,8 @@ function Blueprint.module(spec)
     end
   end
 
-  -- outputs: where the bot takes the product
-  local outputs, fed = {}, {};
+  -- outputs: where the bot takes the product; packs: what the labs get
+  local outputs, fed, packs = {}, {}, {};
   for i, part in ipairs(parts) do
     local items = receives[i] or {};
     if(part.kind == "furnace") then
@@ -409,6 +457,14 @@ function Blueprint.module(spec)
     elseif(part.kind == "container") then
       for item in pairs(items) do
         outputs[#outputs + 1] = {building=i, type=item, slot="output"};
+      end
+    elseif(part.kind == "assembling-machine" and not taken_from[i]) then
+      for product in pairs(recipe_items(part.recipe) or {}) do
+        outputs[#outputs + 1] = {building=i, type=product, slot="output"};
+      end
+    elseif(part.kind == "lab") then
+      for item in pairs(items) do
+        if(lab_takes(part.prototype, item)) then packs[item] = true; end
       end
     elseif(part.kind == "mining-drill" and part.prototype.burner_prototype and items[FUEL]) then
       outputs[#outputs + 1] = {building=i, type=FUEL, slot="fuel", keep=KEEP_FUEL};
@@ -456,6 +512,17 @@ function Blueprint.module(spec)
         inputs[#inputs + 1] = {building=i, type=FUEL, slot="fuel", ongoing=false};
       end
     end
+    if(part.kind == "assembling-machine") then
+      -- what no inserter brings, the bot carries (in name order, so runs repeat)
+      local wanted = {};
+      for item in pairs(select(2, recipe_items(part.recipe)) or {}) do
+        if(not (receives[i] or {})[item]) then wanted[#wanted + 1] = item; end
+      end
+      table.sort(wanted);
+      for j, item in ipairs(wanted) do
+        inputs[#inputs + 1] = {building=i, type=item, slot="input"};
+      end
+    end
   end
 
   local tiles = {};
@@ -467,15 +534,27 @@ function Blueprint.module(spec)
     return a.position.y < b.position.y;
   end);
 
-  if(power) then
-    -- water in, power out: a pump, something that makes power, poles reaching
-    -- every generator and consumer
-    local kinds = {};
-    for i, part in ipairs(parts) do kinds[part.kind] = true; end
-    if(not kinds["offshore-pump"]) then
+  local kinds, consumers = {}, false;
+  for i, part in ipairs(parts) do
+    kinds[part.kind] = true;
+    consumers = consumers or (on_network(part.prototype) and part.kind ~= "generator");
+  end
+  -- runs on our power: buildings on the network and nothing making power
+  local powered = not power and consumers and not kinds["generator"];
+  if(powered and not kinds["electric-pole"]) then
+    errors[#errors + 1] = "no pole to bring power from our network";
+  end
+  local pack_list = {};
+  for item in pairs(packs) do pack_list[#pack_list + 1] = item; end
+  table.sort(pack_list);
+
+  if(power or powered) then
+    -- water in, power out: a pump, something that makes power; and in
+    -- either kind, poles reaching every generator and consumer
+    if(power and not kinds["offshore-pump"]) then
       errors[#errors + 1] = "a power module needs an offshore pump";
     end
-    if(not kinds["generator"]) then
+    if(power and not kinds["generator"]) then
       errors[#errors + 1] = "a power module needs a generator (a steam engine)";
     end
     for i, part in ipairs(parts) do
@@ -493,8 +572,9 @@ function Blueprint.module(spec)
         end
       end
     end
-  elseif(#outputs == 0) then
-    errors[#errors + 1] = "nothing ends where the bot can take it (a furnace's result, a chest)";
+  end
+  if(not power and #outputs == 0 and #pack_list == 0) then
+    errors[#errors + 1] = "nothing ends where the bot can take it (a furnace's result, a chest) or in a lab";
   end
   if(spec.product) then
     local found = false;
@@ -506,7 +586,8 @@ function Blueprint.module(spec)
     end
   end
   return {name=spec.name, resource=spec.resource, geometry=tiles, buildings=buildings, inputs=inputs, outputs=outputs,
-          power=power or nil, label=blueprint.label}, nil, {errors=errors, warnings=warnings, flows=flows};
+          power=power or nil, powered=powered or nil, packs=#pack_list > 0 and pack_list or nil,
+          label=blueprint.label}, nil, {errors=errors, warnings=warnings, flows=flows};
 end
 
 return Blueprint;

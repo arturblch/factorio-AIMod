@@ -57,11 +57,13 @@ param(
   # replace the bot's goals, comma separated: <item>:<n> = make n per minute,
   # have:<item>:<n> = have n in the inventory, e.g. "copper-plate:10,have:copper-cable:20"
   [string]$Goals,
-  # also print the production score (util/production_score.lua): after every
+  # also print the production score (util/production_score.lua; growth runs are
+  # compared by util/evaluation.lua instead, see -Grow): after every
   # snapshot, and the last one per seed and in total
   [switch]$Score,
   # let the bot play on after its goals (GrowthTask) until -Ticks, and report
-  # the modules it built and the score instead of the time it took
+  # the modules it built and the evaluation (util/evaluation.lua: milestones,
+  # plates used, surplus, idle) instead of the time it took
   [switch]$Grow,
   # peaceful mode: biters attack only when attacked (long -Grow runs draw
   # attacks with their pollution after ~15 minutes)
@@ -186,7 +188,7 @@ foreach ($s in ($Seed -split ',' | ForEach-Object { [uint32]$_.Trim() })) {
   $flags = @()
   if ($CursorNoise) { $flags += "cursor-noise" }
   if ($FullInventory) { $flags += "full-inventory" }
-  if ($Score -or $Grow) { $flags += "score" }
+  if ($Score) { $flags += "score" }
   if ($Grow) { $flags += "grow:$($Ticks - 60)" }
   if ($Peaceful) { $flags += "peaceful" }
   if ($Modules) { $flags += "modules:" + (($Modules -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ }) -join '+') }
@@ -205,6 +207,17 @@ foreach ($s in ($Seed -split ',' | ForEach-Object { [uint32]$_.Trim() })) {
   $scoreLine = $test | Where-Object { $_ -match '^\s*score -?\d+' } | Select-Object -Last 1
   if ($scoreLine -match 'score (-?\d+)') { $points = [long]$Matches[1] }
   $scoreNote = if ($null -ne $points) { "score $points" } else { $null }
+  # the evaluation of a growth run: the last line of it, and its numbers
+  $evalLine = $test | Where-Object { $_ -match '^\s*evaluation: ' } | Select-Object -Last 1
+  $evalKey = $test | Where-Object { $_ -match 'evaluation-key ' } | Select-Object -Last 1
+  $evaluation = $null
+  if ($evalKey) {
+    $evaluation = @{}
+    foreach ($pair in [regex]::Matches($evalKey, '(\w+)=(-?[\d.]+)')) {
+      $evaluation[$pair.Groups[1].Value] = [double]::Parse($pair.Groups[2].Value, [Globalization.CultureInfo]::InvariantCulture)
+    }
+  }
+  $evalNote = if ($evalLine) { $evalLine.Trim() } else { $null }
 
   if (-not $Brief) {
     $transitions = @($test | Where-Object { $_ -match ' goal -> ' })
@@ -232,17 +245,17 @@ foreach ($s in ($Seed -split ',' | ForEach-Object { [uint32]$_.Trim() })) {
     $errors | Select-Object -First 10
     if ($errors.Count -eq 0 -and $explained.Count -eq 0) { $lines | Select-Object -Last 15 }
     $why = @($explained + $errors + "exit code $($p.ExitCode)")[0]
-    $runs.Add([pscustomobject]@{ Seed = $s; Result = "FAILED: $why"; Ticks = $null; Score = $points })
+    $runs.Add([pscustomobject]@{ Seed = $s; Result = "FAILED: $why"; Ticks = $null; Score = $points; Evaluation = $evaluation })
   } elseif ($completed) {
     $extra = @($test | Where-Object { $_ -match '^cursor noise|^full inventory|^modules:|^power:' })
-    Write-Host ((@("seed ${s}: OK, $completed") + $extra + $scoreNote | Where-Object { $_ }) -join "; ") -ForegroundColor Green
+    Write-Host ((@("seed ${s}: OK, $completed") + $extra + $evalNote + $scoreNote | Where-Object { $_ }) -join "; ") -ForegroundColor Green
     $ticksTaken = if ($completed -match 't=(\d+)') { [int]$Matches[1] } else { $null }
-    $runs.Add([pscustomobject]@{ Seed = $s; Result = "OK"; Ticks = $ticksTaken; Score = $points })
+    $runs.Add([pscustomobject]@{ Seed = $s; Result = "OK"; Ticks = $ticksTaken; Score = $points; Evaluation = $evaluation })
   } else {
     $failed++
     $last = $test | Where-Object { $_ -match ' pos=' } | Select-Object -Last 1
     Write-Host ((@("seed ${s}: NOT COMPLETED within $Ticks ticks; last snapshot: $last") + $scoreNote | Where-Object { $_ }) -join "; ") -ForegroundColor Yellow
-    $runs.Add([pscustomobject]@{ Seed = $s; Result = "NOT COMPLETED within $Ticks ticks"; Ticks = $null; Score = $points })
+    $runs.Add([pscustomobject]@{ Seed = $s; Result = "NOT COMPLETED within $Ticks ticks"; Ticks = $null; Score = $points; Evaluation = $evaluation })
   }
 }
 
@@ -257,13 +270,30 @@ if ($Grow) { $mode += " -Grow" }
 if ($Peaceful) { $mode += " -Peaceful" }
 $tally = "$($ok.Count) of $($runs.Count) seeds completed, $(if ($total) { $total } else { 0 }) ticks in total"
 # the score of every seed, completed or not
-if ($Score -or $Grow) { $tally += ", score $(($runs | Measure-Object -Property Score -Sum).Sum) in total" }
+if ($Score) { $tally += ", score $(($runs | Measure-Object -Property Score -Sum).Sum) in total" }
+# growth: the evaluations added up (milestones, minutes and used summed,
+# surplus and idle averaged) - what PLAN.md compares growth by
+$evaluated = @($runs | Where-Object { $_.Evaluation })
+if ($Grow -and $evaluated.Count -gt 0) {
+  function Sum-Of($key) { ($evaluated | ForEach-Object { $_.Evaluation[$key] } | Measure-Object -Sum).Sum }
+  $inv = [Globalization.CultureInfo]::InvariantCulture
+  $tally += ", evaluation: milestones $(Sum-Of 'reached') of $(Sum-Of 'of') (" + (Sum-Of 'minutes').ToString("0.0", $inv) +
+    " min in all), used " + (Sum-Of 'used').ToString("0.0", $inv) + "/min, surplus " +
+    ((Sum-Of 'surplus') / $evaluated.Count * 100).ToString("0", $inv) + " %, idle drills " +
+    ((Sum-Of 'idle') / $evaluated.Count * 100).ToString("0", $inv) + " %, bot short " + (Sum-Of 'short').ToString("0.0", $inv) + " min"
+}
 if ($runs.Count -gt 1) { Write-Host $tally -ForegroundColor $(if ($failed -gt 0) { "Red" } else { "Green" }) }
 foreach ($r in $runs) { if ($r.Result -ne "OK") { Write-Annotation "$mode seed $($r.Seed)" $r.Result } }
-$header = if ($Score -or $Grow) { @("| seed | result | ticks | score |", "|---:|---|---:|---:|") } else { @("| seed | result | ticks |", "|---:|---|---:|") }
+$header = if ($Grow) { @("| seed | result | milestones | min in all | used/min | surplus | idle |", "|---:|---|---:|---:|---:|---:|---:|") }
+  elseif ($Score) { @("| seed | result | ticks | score |", "|---:|---|---:|---:|") } else { @("| seed | result | ticks |", "|---:|---|---:|") }
 Write-JobSummary (@("### $mode", "", $tally, "") + $header +
   @($runs | ForEach-Object {
-    "| $($_.Seed) | $($_.Result -replace '\|', '/') | $($_.Ticks) |" + $(if ($Score -or $Grow) { " $($_.Score) |" } else { "" })
+    $e = $_.Evaluation
+    if ($Grow -and $e) {
+      "| $($_.Seed) | $($_.Result -replace '\|', '/') | $($e['reached']) of $($e['of']) | $($e['minutes']) | $($e['used']) | $([math]::Round($e['surplus'] * 100)) % | $([math]::Round($e['idle'] * 100)) % |"
+    } else {
+      "| $($_.Seed) | $($_.Result -replace '\|', '/') | $($_.Ticks) |" + $(if ($Score) { " $($_.Score) |" } else { "" })
+    }
   }) + "")
 
 if (-not $Brief) { Write-Host "Full logs: $WorkDir" }

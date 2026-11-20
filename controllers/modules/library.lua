@@ -86,6 +86,14 @@ local function raw_cost(item, count, total, depth)
   end
 end
 
+-- {item = count} raw items `count` x `item` are hand-crafted from: plates,
+-- stone, wood, ... (an item with no hand-craft recipe is itself raw).
+function ModuleLibrary.raw_cost(item, count)
+  local total = {};
+  raw_cost(item, count, total, 0);
+  return total;
+end
+
 local reports = {};
 function ModuleLibrary.report(module)
   if(reports[module.name]) then

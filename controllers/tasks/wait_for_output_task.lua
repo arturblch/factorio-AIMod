@@ -13,9 +13,11 @@ require 'controllers/tasks/hand_smelt_task'
 
   Meanwhile it doesn't just stand there: what the tasks further down the
   stack will want and the map provides (coal, stone, wood, ore) is fetched
-  now, one item at a time, instead of after the wait. When there is nothing
-  left to fetch and the module needs a while yet, it smelts the product by
-  hand (HandSmeltTask), once per wait: a burner drill can't keep a stone
+  now, one item at a time, instead of after the wait; then the item it
+  waits for, if the map has it, is mined by hand HAND_BATCH at a time
+  (GatherResourceTask from_map). When there is nothing left to fetch and
+  the module needs a while yet, it smelts the product by hand
+  (HandSmeltTask), once per wait: a burner drill can't keep a stone
   furnace busy, hand mining can. What the tasks below need stays in the
   inventory for them.
    - module: BaseModule
@@ -32,6 +34,7 @@ local SIDE_WORK_EVERY = 60; -- ticks between looks for something to do
 -- Hand smelting takes a few seconds to get going (craft and place a furnace,
 -- mine the first ore, smelt it); not worth it when the module is nearly done.
 local MIN_SMELT_SECONDS = 10;
+local HAND_BATCH = 10; -- of its own item mined by hand between looks at the module
 
 function WaitForOutputTask:achieved (args)
   local waiting = self.module:outputCount(self.type);
@@ -83,6 +86,16 @@ function WaitForOutputTask:sideWork(args)
   for i, name in ipairs(names) do
     if(manager:find_natural_source(player, name)) then
       return GatherResourceTask:new{type=name, qty=needs[name], optional=true};
+    end
+  end
+  -- its own item, where the map has it (stone, coal): mined by hand a few
+  -- at a time, it shortens the wait - a stone drill makes 15 a minute,
+  -- hands 30, and the bot used to stand by the chest for its 40 stone
+  if(self.total and manager:find_natural_source(player, self.type)) then
+    local have = Inventories.total_craftable_count(player, self.type);
+    local missing = self.total - have - self.module:outputCount(self.type);
+    if(missing > 0) then
+      return GatherResourceTask:new{type=self.type, qty=have + math.min(missing, HAND_BATCH), from_map=true};
     end
   end
   if(self.total and not self.smelt_considered) then

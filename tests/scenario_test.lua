@@ -151,6 +151,20 @@ local function power_summary(player)
   return Power.summary(player) .. " | research: " .. table.concat(research, ", ")
 end
 
+-- How far the base has come (util/evaluation.lua): milestones, used,
+-- surplus, idle - what growth runs are compared by, not the score.
+local function evaluation_lines(player)
+  local report = Evaluation.report(player)
+  return Evaluation.line(report), Evaluation.key(report)
+end
+
+-- The supply chain (util/supply_chain.lua): what growth builds next and why,
+-- and the coverage of every link.
+local function chain_summary(player)
+  local plan, chain = AIMod.chain(player)
+  return (plan and ("next " .. plan.item .. " (" .. plan.reason .. ") | ") or "next nothing | ") .. SupplyChain.summary(chain)
+end
+
 local function goal_flags()
   local goals = {}
   for kind, item, n in (script.test_arg or ""):gmatch("(%a+):([%w%-]+):([%d%.]+)") do
@@ -337,6 +351,8 @@ script.on_event(defines.events.on_tick, function(event)
     if grow_until then
       log("[test]   " .. module_summary(player))
       log("[test]   " .. power_summary(player))
+      log("[test]   " .. chain_summary(player))
+      log("[test]   " .. (evaluation_lines(player)))
     end
     if not check_storage(event.tick) then return end
   end
@@ -346,6 +362,10 @@ script.on_event(defines.events.on_tick, function(event)
     log_score(player)
     log("[test] " .. module_summary(player))
     log("[test] " .. power_summary(player))
+    log("[test] " .. chain_summary(player))
+    local line, key = evaluation_lines(player)
+    log("[test] " .. line)
+    log("[test] " .. key)
     local failed = storage.failed_goals and storage.failed_goals[1] or {}
     if #failed > 0 then log("[test]   gave up on: " .. table.concat(failed, ", ")) end
     if (t.deaths or 0) > 0 then

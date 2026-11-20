@@ -25,9 +25,15 @@ require 'tests/unit/hand_smelt_test'
 require 'tests/unit/production_score_test'
 require 'tests/unit/research_test'
 require 'tests/unit/growth_test'
+require 'tests/unit/supply_chain_test'
+require 'tests/unit/chain_sequence_test'
+require 'tests/unit/planner_test'
+require 'tests/unit/strategy_test'
+require 'tests/unit/evaluation_test'
 require 'tests/unit/blueprint_test'
 require 'tests/unit/found_blueprints_test'
 require 'tests/unit/power_test'
+require 'tests/unit/science_test'
 
 -- shared state every test starts without
 T.global_before[#T.global_before + 1] = function()
@@ -38,6 +44,10 @@ T.global_before[#T.global_before + 1] = function()
   storage.failed_goals = nil
   storage.room_failed_at = nil
   storage.hand_furnaces = nil
+  storage.hand_furnace_builds = nil
+  storage.time_spent = nil
+  storage.calibration = nil
+  storage.evaluation = nil
   storage.goals_done = {}
   storage.module_choice = nil
 end

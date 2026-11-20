@@ -1,40 +1,334 @@
 {
-  "about": "What the bot's modules did in headless runs (tools/run-headless.ps1). Kept by hand; `node tools/blueprint.js viewer` copies it into tools/blueprint-viewer.html. Scores are the production score (util/production_score.lua).",
+  "about": "What the bot's modules did in headless runs (tools/run-headless.ps1). Kept by hand; `node tools/blueprint.js viewer` copies it into tools/blueprint-viewer.html. Growth is compared by the evaluation (util/evaluation.lua, plan 5.5): eval10/eval30 per map - milestones reached of how many and their minutes summed, plates and stone used a minute, surplus share, idle share of drill time. min10/min30 are the production score (util/production_score.lua), the old measure: it counts plates piling up with nothing to take them too.",
   "growth": {
-    "date": "2026-11-18",
-    "branch": "big-modules",
-    "seeds": [1, 4, 42, 1234567],
+    "date": "2026-11-20",
+    "branch": "red-science",
+    "seeds": [
+      1,
+      4,
+      42,
+      1234567
+    ],
     "command": "-Grow (10 min) and -Grow -Peaceful -Ticks 108000 (30 min); -Modules for the pairs",
     "variants": [
-      {"name": "Пары до исправлений", "note": "ветка blueprints: бот стоял, ожидая от модуля больше, чем тот вмещает",
-       "modules": ["BurnerToFurnace", "BurnerToFurnaceCopper", "BurnerToBurner"],
-       "min10": [3768, 4067, 3471, 3033], "min30": [18110, 8418, 20055, 17039]},
-      {"name": "Пары, запас угля 1,25", "note": "ожидание не больше вместимости, рост смотрит на следующий модуль",
-       "modules": ["BurnerToFurnace", "BurnerToFurnaceCopper", "BurnerToBurner"],
-       "min30": [17917, 25434, 20707, 17892]},
-      {"name": "Пары, запас угля 2", "note": "место — у персонажа",
-       "modules": ["BurnerToFurnace", "BurnerToFurnaceCopper", "BurnerToBurner"],
-       "min10": [4162, 5152, 3812, 3299], "min30": [19217, 31052, 25131, 19637]},
-      {"name": "Пары, запас 2, ряды", "note": "место — рядом с модулем на той же руде",
-       "modules": ["BurnerToFurnace", "BurnerToFurnaceCopper", "BurnerToBurner"],
-       "min10": [4155, 5138, 3579, 3285], "min30": [19487, 27062, 23957, 19077]},
-      {"name": "Колонки и кольцо, запас 2", "note": "место — у персонажа; с исправлением соседнего дерева (1.10)",
-       "modules": ["IronColumn4", "CopperColumn4", "CoalRing4", "BurnerToFurnace", "BurnerToBurner"],
-       "min10": [5195, 5513, 4348, 3634], "min30": [23144, 22897, 24649, 22292]},
-      {"name": "Колонки и кольцо, запас 2, ряды", "note": "на руде только буры, место — рядом с модулем на той же руде (ветка big-modules)",
-       "modules": ["IronColumn4", "CopperColumn4", "CoalRing4", "BurnerToFurnace", "BurnerToBurner"],
-       "min10": [5195, 5513, 4173, 3634], "min30": [23185, 35969, 21965, 21902]},
-      {"name": "То же и электричество", "note": "так сейчас по умолчанию (ветка electricity): после 4 модулей станция с лабораторией, электробур изучен на всех картах к 15–17-й минуте; пока ничего не питает, кроме лаборатории",
-       "default": true,
-       "modules": ["IronColumn4", "CopperColumn4", "CoalRing4", "BurnerToFurnace", "BurnerToBurner", "SteamPower"],
-       "min10": [4959, 5117, 4173, 3634], "min30": [19146, 22497, 18150, 17667]}
+      {
+        "name": "Пары до исправлений",
+        "note": "ветка blueprints: бот стоял, ожидая от модуля больше, чем тот вмещает",
+        "modules": [
+          "BurnerToFurnace",
+          "BurnerToFurnaceCopper",
+          "BurnerToBurner"
+        ],
+        "min10": [
+          3768,
+          4067,
+          3471,
+          3033
+        ],
+        "min30": [
+          18110,
+          8418,
+          20055,
+          17039
+        ]
+      },
+      {
+        "name": "Пары, запас угля 1,25",
+        "note": "ожидание не больше вместимости, рост смотрит на следующий модуль",
+        "modules": [
+          "BurnerToFurnace",
+          "BurnerToFurnaceCopper",
+          "BurnerToBurner"
+        ],
+        "min30": [
+          17917,
+          25434,
+          20707,
+          17892
+        ]
+      },
+      {
+        "name": "Пары, запас угля 2",
+        "note": "место — у персонажа",
+        "modules": [
+          "BurnerToFurnace",
+          "BurnerToFurnaceCopper",
+          "BurnerToBurner"
+        ],
+        "min10": [
+          4162,
+          5152,
+          3812,
+          3299
+        ],
+        "min30": [
+          19217,
+          31052,
+          25131,
+          19637
+        ]
+      },
+      {
+        "name": "Пары, запас 2, ряды",
+        "note": "место — рядом с модулем на той же руде",
+        "modules": [
+          "BurnerToFurnace",
+          "BurnerToFurnaceCopper",
+          "BurnerToBurner"
+        ],
+        "min10": [
+          4155,
+          5138,
+          3579,
+          3285
+        ],
+        "min30": [
+          19487,
+          27062,
+          23957,
+          19077
+        ]
+      },
+      {
+        "name": "Колонки и кольцо, запас 2",
+        "note": "место — у персонажа; с исправлением соседнего дерева (1.10)",
+        "modules": [
+          "IronColumn4",
+          "CopperColumn4",
+          "CoalRing4",
+          "BurnerToFurnace",
+          "BurnerToBurner"
+        ],
+        "min10": [
+          5195,
+          5513,
+          4348,
+          3634
+        ],
+        "min30": [
+          23144,
+          22897,
+          24649,
+          22292
+        ]
+      },
+      {
+        "name": "Колонки и кольцо, запас 2, ряды",
+        "note": "на руде только буры, место — рядом с модулем на той же руде (ветка big-modules)",
+        "modules": [
+          "IronColumn4",
+          "CopperColumn4",
+          "CoalRing4",
+          "BurnerToFurnace",
+          "BurnerToBurner"
+        ],
+        "min10": [
+          5195,
+          5513,
+          4173,
+          3634
+        ],
+        "min30": [
+          23185,
+          35969,
+          21965,
+          21902
+        ]
+      },
+      {
+        "name": "То же и электричество",
+        "note": "master после PR 11: после 4 модулей станция с лабораторией, электробур изучен на всех картах к 15–17-й минуте колбами, сделанными руками",
+        "modules": [
+          "IronColumn4",
+          "CopperColumn4",
+          "CoalRing4",
+          "BurnerToFurnace",
+          "BurnerToBurner",
+          "SteamPower"
+        ],
+        "min10": [
+          4959,
+          5117,
+          4173,
+          3634
+        ],
+        "min30": [
+          19146,
+          22497,
+          18150,
+          17667
+        ]
+      },
+      {
+        "name": "То же и автомат красных колб",
+        "note": "ветка red-science, первая версия: автоматизация руками к 12–14,5-й минуте, затем модуль RedScience со своей лабораторией к 15–25,5-й, электробур на его колбах к 21–30-й (seed 42 — 98 %)",
+        "modules": [
+          "IronColumn4",
+          "CopperColumn4",
+          "CoalRing4",
+          "BurnerToFurnace",
+          "BurnerToBurner",
+          "SteamPower",
+          "RedScience"
+        ],
+        "min10": [
+          4959,
+          5121,
+          4173,
+          3634
+        ],
+        "min30": [
+          17586,
+          23122,
+          20360,
+          19792
+        ]
+      },
+      {
+        "name": "Узкое место, уголь за обход, камень в сундук",
+        "note": "так сейчас по умолчанию (ветка red-science): следующий модуль — на то, чего бот дольше всего ждал или добывал руками (железо, потом камень); заправка всех модулей за один обход со всем углём угольных модулей; автомат колб у лаборатории станции; закрытые рецепты зданий открываются триггером. Электробур к 15,5–22-й минуте",
+        "modules": [
+          "IronColumn4",
+          "CopperColumn4",
+          "CoalRing4",
+          "BurnerToFurnace",
+          "BurnerToFurnaceCopper",
+          "BurnerToBurner",
+          "SteamPower",
+          "RedScience",
+          "StoneToChest"
+        ],
+        "min10": [
+          5353,
+          5629,
+          4839,
+          4034
+        ],
+        "min30": [
+          51606,
+          75508,
+          48674,
+          36806
+        ]
+      },
+      {
+        "name": "Планировщик в три уровня",
+        "note": "так сейчас по умолчанию (ветка red-science, PR 17–19): модель цепочки, планировщик на модели экономики с целью «развитие и нехватка», стратегия (цели продуктов, порядок исследований), до 5 кандидатов, лучевой поиск, модель по событиям, расчёт по частям, калибровка по доле работающих буров; бот докапывает руками то, что ждёт от модуля. Все вехи к 16–20-й минуте, но 83 % пластин и камня лежат без дела",
+        "default": true,
+        "modules": [
+          "IronColumn4",
+          "CopperColumn4",
+          "CoalRing4",
+          "BurnerToFurnace",
+          "BurnerToFurnaceCopper",
+          "BurnerToBurner",
+          "SteamPower",
+          "RedScience",
+          "StoneToChest"
+        ],
+        "min10": [
+          5646,
+          5082,
+          4079,
+          4117
+        ],
+        "min30": [
+          78802,
+          76216,
+          56286,
+          52574
+        ],
+        "eval10": {
+          "reached": [
+            1,
+            1,
+            0,
+            0
+          ],
+          "of": [
+            4,
+            4,
+            4,
+            4
+          ],
+          "minutes": [
+            38.18,
+            37.43,
+            39.93,
+            39.93
+          ],
+          "used": [
+            34.26,
+            37.86,
+            26.44,
+            25.04
+          ],
+          "surplus": [
+            0.5839,
+            0.4019,
+            0.5156,
+            0.5192
+          ],
+          "idle": [
+            0.0205,
+            0.0094,
+            0.059,
+            0.0224
+          ]
+        },
+        "eval30": {
+          "reached": [
+            4,
+            4,
+            4,
+            4
+          ],
+          "of": [
+            4,
+            4,
+            4,
+            4
+          ],
+          "minutes": [
+            50.68,
+            44.93,
+            57.95,
+            60.08
+          ],
+          "used": [
+            64.44,
+            55.76,
+            46.69,
+            48.63
+          ],
+          "surplus": [
+            0.836,
+            0.8522,
+            0.8247,
+            0.8183
+          ],
+          "idle": [
+            0.0177,
+            0.0241,
+            0.0094,
+            0.007
+          ]
+        }
+      }
     ]
   },
   "goals": {
     "note": "28 карт до «Completed goals» (10 железа/мин, затем 20 угля/мин), тиков в сумме",
     "runs": [
-      {"name": "Цели берут самый дешёвый покрывающий модуль (пары)", "ticks": 115397, "default": true},
-      {"name": "Цель по углю строит кольцо", "ticks": 192590}
+      {
+        "name": "Цели берут самый дешёвый покрывающий модуль (пары)",
+        "ticks": 115397,
+        "default": true
+      },
+      {
+        "name": "Цель по углю строит кольцо",
+        "ticks": 192590
+      }
     ]
   },
   "modules": {
@@ -50,7 +344,8 @@
     "IronToChest": "Рост 10 мин с ним — 11 067 против 14 009 у пар (замер на research-growth).",
     "IronBeltLine": "Бот строит её, но 13 горелок не обслуживает: на seed 1 к 15-й минуте из 18 зданий работают 2.",
     "StonePairFurnace": "15 кирпичей/мин: 16 933 тика против 20 260 у одного бура; для 5/мин — медленнее.",
-    "StoneToChest": "Камень в сундук: целью сам по себе не бывает.",
-    "SteamPower": "Строит рост после 4 модулей: на 4 картах встаёт у воды за 8–11 мин, лаборатория берёт 60 кВт из 900 и изучает электробур (25 колб). Пока это вложение: −25 % счёта за 30 мин, отдача — в PR 12 (электробуры)."
+    "StoneToChest": "Целью не бывает, строит его рост, когда ручная добыча камня становится узким местом: на 4 картах первый к 15,5–26,5-й минуте, всего 1–3 за 30 мин.",
+    "SteamPower": "Строит рост после 4 модулей: на 4 картах встаёт у воды за 8–11 мин, лаборатория берёт 60 кВт из 900 и изучает электробур (25 колб). Пока это вложение: −25 % счёта за 30 мин, отдача — в PR 12 (электробуры).",
+    "RedScience": "Строит рост после исследования автоматизации; встаёт своей лабораторией на лабораторию станции, так что манипулятор кормит её, а своя не строится (на всех 4 картах). Бот привозит медь и шестерни на 25 колб за раз. С узким местом встаёт к 11,5–17-й минуте, электробур изучен к 15,5–22-й."
   }
 }

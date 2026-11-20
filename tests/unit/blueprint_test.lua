@@ -151,7 +151,7 @@ T.describe("ModuleLibrary from blueprints", function()
     local names = {}
     for _, module in ipairs(ModuleLibrary.all()) do names[#names + 1] = module.name end
     T.same(names, { "IronColumn4", "BurnerToFurnace", "CopperColumn4", "BurnerToFurnaceCopper", "BurnerToFurnaceStone",
-      "CoalRing4", "BurnerToBurner", "SteamPower" }, "names")
+      "CoalRing4", "BurnerToBurner", "SteamPower", "RedScience", "StoneToChest" }, "names")
   end)
 end)
 
