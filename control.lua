@@ -29,6 +29,7 @@ require 'util/economy'
 require 'util/strategy'
 require 'util/calibration'
 require 'util/evaluation'
+require 'util/time_budget'
 require 'controllers/tasks/plan_task'
 require 'controllers/managers/chest_resource_source'
 require 'controllers/managers/build_module_resource_source'
@@ -147,6 +148,7 @@ function AIMod.tick_bot(player, machine)
     Bottleneck.tick(player, machine);
     Calibration.tick(player);
     Evaluation.tick(player);
+    TimeBudget.tick(player, machine);
     machine:tick{ player=player }
   else
     AIMod.goals_done(player);
@@ -249,10 +251,11 @@ commands.add_command("aimod-chain", "What the AIMod bot's modules make against w
   end
 end)
 
-commands.add_command("aimod-evaluation", "How far the AIMod bot's base has come: milestones, what went into buildings and research, surplus, idle time.", function(command)
+commands.add_command("aimod-evaluation", "How far the AIMod bot's base has come: milestones, what went into buildings and research, surplus, idle time, and what the bot spends its time on.", function(command)
   local player = command.player_index and game.get_player(command.player_index);
   if(not player) then return end
   player.print("AIMod " .. Evaluation.line(Evaluation.report(player)));
+  player.print("AIMod " .. TimeBudget.line(TimeBudget.report(player)));
 end)
 
 commands.add_command("aimod-modules", "Lists the modules the AIMod bot builds (blueprints/library.lua).", function(command)

@@ -158,6 +158,12 @@ local function evaluation_lines(player)
   return Evaluation.line(report), Evaluation.key(report)
 end
 
+-- What the bot spends its time on (util/time_budget.lua, plan 5.6).
+local function time_lines(player)
+  local report = TimeBudget.report(player)
+  return TimeBudget.line(report), TimeBudget.key(report)
+end
+
 -- The supply chain (util/supply_chain.lua): what growth builds next and why,
 -- and the coverage of every link.
 local function chain_summary(player)
@@ -353,6 +359,7 @@ script.on_event(defines.events.on_tick, function(event)
       log("[test]   " .. power_summary(player))
       log("[test]   " .. chain_summary(player))
       log("[test]   " .. (evaluation_lines(player)))
+      log("[test]   " .. (time_lines(player)))
     end
     if not check_storage(event.tick) then return end
   end
@@ -366,6 +373,9 @@ script.on_event(defines.events.on_tick, function(event)
     local line, key = evaluation_lines(player)
     log("[test] " .. line)
     log("[test] " .. key)
+    local time_line, time_key = time_lines(player)
+    log("[test] " .. time_line)
+    log("[test] " .. time_key)
     local failed = storage.failed_goals and storage.failed_goals[1] or {}
     if #failed > 0 then log("[test]   gave up on: " .. table.concat(failed, ", ")) end
     if (t.deaths or 0) > 0 then
