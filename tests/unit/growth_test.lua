@@ -147,6 +147,26 @@ T.describe("GrowthTask", function()
     T.truthy(tasks[1].qty >= half, "at least half a stack: " .. tasks[1].qty)
   end)
 
+  T.it("a gather takes what a module has and goes to another for the rest", function()
+    local near = built(BurnerToFurnaceModule, "iron-ore", 0)
+    fuel_all(near, 10)
+    near:entity(2).get_output_inventory().insert{ name = "iron-plate", count = 30 }
+    local manager = storage.resource_managers[1]
+    local function gather()
+      machine = GoalMachine:new()
+      manager:module_source("iron-plate", true, player, 50):gather{ type = "iron-plate", qty = 50, player = player, machine = machine }
+      local waits = false
+      for _, task in ipairs(Fakes.goals(machine)) do waits = waits or getmetatable(task) == WaitForOutputTask end
+      return waits
+    end
+    T.truthy(gather(), "the only one with plates: waits there for the rest, as before")
+    local far = built(BurnerToFurnaceModule, "iron-ore", 20)
+    fuel_all(far, 10)
+    far:entity(2).get_output_inventory().insert{ name = "iron-plate", count = 10 }
+    T.falsy(gather(), "another has some: takes the 30 and goes on")
+    T.same({ getmetatable(Fakes.goals(machine)[1]), Fakes.goals(machine)[1].module }, { CollectModuleOutputTask, near }, "the 30 first")
+  end)
+
   T.it("fuels the nearest module first", function()
     local near = built(BurnerToFurnaceModule, "iron-ore", 0)
     local far = built(BurnerToFurnaceModule, "iron-ore", 40)
