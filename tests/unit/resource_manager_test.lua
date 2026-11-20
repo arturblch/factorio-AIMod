@@ -63,6 +63,24 @@ T.describe("ResourceManager", function()
     T.eq(manager:best_resource_source(player, "coal"), module_source, "source")
   end)
 
+  T.it("takes the nearest module that holds enough, else the one holding the most", function()
+    local function holding(count, x)
+      local source = fake_module_source("iron-plate", count > 0)
+      source.module = {
+        outputCount = function(self, t) return count end,
+        entity = function(self, i) return { position = { x = x, y = 0 } } end,
+      }
+      return source
+    end
+    local first, far, near = holding(2, 10), holding(300, 30), holding(80, 5)
+    for _, source in ipairs({ first, far, near }) do manager:register_source(source) end
+    T.eq(manager:module_source("iron-plate", true, player, 50), near, "the nearest with 50")
+    T.eq(manager:module_source("iron-plate", true, player, 200), far, "the only one with 200")
+    T.eq(manager:module_source("iron-plate", true, player, 500), far, "none has 500: the most")
+    T.eq(manager:module_source("iron-plate", true), first, "without a player: the first, as before")
+    T.eq(manager:best_resource_source(player, "iron-plate", false, nil, 50), near, "the gather asks for what it lacks")
+  end)
+
   T.it("hand-crafts what can't be found on the map", function()
     T.eq(getmetatable(manager:best_resource_source(player, "stone-furnace")), CraftResourceSource, "source class")
   end)

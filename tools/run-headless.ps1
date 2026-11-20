@@ -218,6 +218,18 @@ foreach ($s in ($Seed -split ',' | ForEach-Object { [uint32]$_.Trim() })) {
     }
   }
   $evalNote = if ($evalLine) { $evalLine.Trim() } else { $null }
+  # what the bot spent its time on (util/time_budget.lua, plan 5.6): the last
+  # line, and the shares after the first minutes, to average over the seeds
+  $timeLine = $test | Where-Object { $_ -match '^\s*bot time: ' } | Select-Object -Last 1
+  $timeKey = $test | Where-Object { $_ -match 'time-key ' } | Select-Object -Last 1
+  $timeShares = $null
+  if ($timeKey) {
+    $timeShares = @{}
+    foreach ($pair in [regex]::Matches($timeKey, '(\w+)=(-?[\d.]+)')) {
+      $timeShares[$pair.Groups[1].Value] = [double]::Parse($pair.Groups[2].Value, [Globalization.CultureInfo]::InvariantCulture)
+    }
+  }
+  $timeNote = if ($timeLine) { $timeLine.Trim() } else { $null }
 
   if (-not $Brief) {
     $transitions = @($test | Where-Object { $_ -match ' goal -> ' })
@@ -245,17 +257,17 @@ foreach ($s in ($Seed -split ',' | ForEach-Object { [uint32]$_.Trim() })) {
     $errors | Select-Object -First 10
     if ($errors.Count -eq 0 -and $explained.Count -eq 0) { $lines | Select-Object -Last 15 }
     $why = @($explained + $errors + "exit code $($p.ExitCode)")[0]
-    $runs.Add([pscustomobject]@{ Seed = $s; Result = "FAILED: $why"; Ticks = $null; Score = $points; Evaluation = $evaluation })
+    $runs.Add([pscustomobject]@{ Seed = $s; Result = "FAILED: $why"; Ticks = $null; Score = $points; Evaluation = $evaluation; TimeShares = $timeShares })
   } elseif ($completed) {
     $extra = @($test | Where-Object { $_ -match '^cursor noise|^full inventory|^modules:|^power:' })
-    Write-Host ((@("seed ${s}: OK, $completed") + $extra + $evalNote + $scoreNote | Where-Object { $_ }) -join "; ") -ForegroundColor Green
+    Write-Host ((@("seed ${s}: OK, $completed") + $extra + $evalNote + $timeNote + $scoreNote | Where-Object { $_ }) -join "; ") -ForegroundColor Green
     $ticksTaken = if ($completed -match 't=(\d+)') { [int]$Matches[1] } else { $null }
-    $runs.Add([pscustomobject]@{ Seed = $s; Result = "OK"; Ticks = $ticksTaken; Score = $points; Evaluation = $evaluation })
+    $runs.Add([pscustomobject]@{ Seed = $s; Result = "OK"; Ticks = $ticksTaken; Score = $points; Evaluation = $evaluation; TimeShares = $timeShares })
   } else {
     $failed++
     $last = $test | Where-Object { $_ -match ' pos=' } | Select-Object -Last 1
     Write-Host ((@("seed ${s}: NOT COMPLETED within $Ticks ticks; last snapshot: $last") + $scoreNote | Where-Object { $_ }) -join "; ") -ForegroundColor Yellow
-    $runs.Add([pscustomobject]@{ Seed = $s; Result = "NOT COMPLETED within $Ticks ticks"; Ticks = $null; Score = $points; Evaluation = $evaluation })
+    $runs.Add([pscustomobject]@{ Seed = $s; Result = "NOT COMPLETED within $Ticks ticks"; Ticks = $null; Score = $points; Evaluation = $evaluation; TimeShares = $timeShares })
   }
 }
 
@@ -281,6 +293,23 @@ if ($Grow -and $evaluated.Count -gt 0) {
     " min in all), used " + (Sum-Of 'used').ToString("0.0", $inv) + "/min, surplus " +
     ((Sum-Of 'surplus') / $evaluated.Count * 100).ToString("0", $inv) + " %, idle drills " +
     ((Sum-Of 'idle') / $evaluated.Count * 100).ToString("0", $inv) + " %, bot short " + (Sum-Of 'short').ToString("0.0", $inv) + " min"
+}
+# growth: what the bot spent its time on after the first minutes, averaged
+# over the seeds (plan 5.6) - an explanation, not part of the comparison
+$timed = @($runs | Where-Object { $_.TimeShares })
+if ($Grow -and $timed.Count -gt 0) {
+  $inv = [Globalization.CultureInfo]::InvariantCulture
+  $timeKeys = @($timed | ForEach-Object { $_.TimeShares.Keys } | Sort-Object -Unique)
+  function Time-Part($part) {
+    $prefix = "late_${part}_"
+    $items = foreach ($k in ($timeKeys | Where-Object { $_.StartsWith($prefix) })) {
+      $sum = ($timed | ForEach-Object { if ($_.TimeShares.ContainsKey($k)) { $_.TimeShares[$k] } else { 0 } } | Measure-Object -Sum).Sum
+      [pscustomobject]@{ Name = $k.Substring($prefix.Length); Share = $sum / $timed.Count }
+    }
+    (@($items | Sort-Object Share -Descending | Where-Object { $_.Share -ge 0.005 }) |
+      ForEach-Object { "$($_.Name) " + ($_.Share * 100).ToString("0", $inv) + " %" }) -join ", "
+  }
+  $tally += "; bot time after the first minutes: job " + (Time-Part 'job') + "; doing " + (Time-Part 'doing')
 }
 if ($runs.Count -gt 1) { Write-Host $tally -ForegroundColor $(if ($failed -gt 0) { "Red" } else { "Green" }) }
 foreach ($r in $runs) { if ($r.Result -ne "OK") { Write-Annotation "$mode seed $($r.Seed)" $r.Result } }

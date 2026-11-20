@@ -13,9 +13,12 @@
      statistics); fuel doesn't count. More is better.
    - surplus: the share of what was made of ITEMS that nothing used: it
      lies in furnaces, chests and the inventory. Less is better.
-   - idle: the share of drill time the drills stood (no fuel, output full,
-     ore gone, other), sampled every SAMPLE_EVERY ticks; and the minutes the
-     bot spent on what it lacked (util/bottleneck.lua). Less is better.
+   - idle: the share of drill time the drills stood for want of something
+     (no fuel, ore gone, other), sampled every SAMPLE_EVERY ticks; and the
+     minutes the bot spent on what it lacked (util/bottleneck.lua). Less is
+     better. A drill standing with its output full is listed among the
+     reasons but isn't idle: what it makes waits in the module until
+     something takes it (plan 4.11) - nothing wants more of it yet.
   Evaluation.tick keeps the samples and the milestones in
   storage.evaluation[player index]; Evaluation.report reads them with the
   statistics; Evaluation.line and Evaluation.key write them out
@@ -135,7 +138,7 @@ function Evaluation.summary(milestones, minutes, made, used, drills, short)
   r.surplus = made_total > 0 and (made_total - used_total) / made_total or 0;
   local total = 0;
   for category, count in pairs(drills or {}) do total = total + count; end
-  r.idle = total > 0 and (total - (drills.working or 0)) / total or 0;
+  r.idle = total > 0 and (total - (drills.working or 0) - (drills["output full"] or 0)) / total or 0;
   for category, count in pairs(drills or {}) do
     if(category ~= "working" and total > 0) then r.idle_reasons[category] = count / total; end
   end

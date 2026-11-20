@@ -133,13 +133,38 @@ T.describe("GrowthTask", function()
     T.same({ getmetatable(tasks[2]), tasks[2].amount, getmetatable(tasks[3]) }, { FuelBuildingTask, 20, FuelBuildingTask }, "fuel")
   end)
 
-  T.it("empties a half full output", function()
+  T.it("empties a half full output of coal, and leaves plates where they are", function()
     local module = built(BurnerToFurnaceModule, "iron-ore", 0)
     fuel_all(module, 10)
     T.eq(GrowthTask.upkeep(player), nil, "nothing to do")
     module:entity(2).get_output_inventory().insert{ name = "iron-plate", count = 50 }
+    T.eq(GrowthTask.upkeep(player), nil, "plates wait until something takes them")
+    local pair = built(BurnerToBurnerModule, "coal", 10)
+    local half = prototypes.item.coal.stack_size / 2
+    for i = 1, 2 do pair:entity(i).get_fuel_inventory().insert{ name = "coal", count = 50 } end
     local tasks = GrowthTask.upkeep(player)
-    T.same({ getmetatable(tasks[1]), tasks[1].type, tasks[1].qty }, { CollectModuleOutputTask, "iron-plate", 50 }, "collect")
+    T.same({ getmetatable(tasks[1]), tasks[1].module, tasks[1].type }, { CollectModuleOutputTask, pair, "coal" }, "the coal")
+    T.truthy(tasks[1].qty >= half, "at least half a stack: " .. tasks[1].qty)
+  end)
+
+  T.it("a gather takes what a module has and goes to another for the rest", function()
+    local near = built(BurnerToFurnaceModule, "iron-ore", 0)
+    fuel_all(near, 10)
+    near:entity(2).get_output_inventory().insert{ name = "iron-plate", count = 30 }
+    local manager = storage.resource_managers[1]
+    local function gather()
+      machine = GoalMachine:new()
+      manager:module_source("iron-plate", true, player, 50):gather{ type = "iron-plate", qty = 50, player = player, machine = machine }
+      local waits = false
+      for _, task in ipairs(Fakes.goals(machine)) do waits = waits or getmetatable(task) == WaitForOutputTask end
+      return waits
+    end
+    T.truthy(gather(), "the only one with plates: waits there for the rest, as before")
+    local far = built(BurnerToFurnaceModule, "iron-ore", 20)
+    fuel_all(far, 10)
+    far:entity(2).get_output_inventory().insert{ name = "iron-plate", count = 10 }
+    T.falsy(gather(), "another has some: takes the 30 and goes on")
+    T.same({ getmetatable(Fakes.goals(machine)[1]), Fakes.goals(machine)[1].module }, { CollectModuleOutputTask, near }, "the 30 first")
   end)
 
   T.it("fuels the nearest module first", function()

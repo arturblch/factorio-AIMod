@@ -1,5 +1,6 @@
 require 'util/logger'
 require 'util/unreachable'
+require 'util/inventories'
 
 require 'ground_resource_source'
 require 'tree_resource_source'
@@ -131,22 +132,57 @@ local function out_of_reach(source)
   return false;
 end
 
-function ResourceManager:module_source(type, ready_only)
+-- How much of `type` `source` holds ready, and how far it is from `player`.
+local function ready_count(source, type)
+  if(source.module and source.module.outputCount) then return source.module:outputCount(type); end
+  return source:has_output(type) and 1 or 0;
+end
+
+local function distance_to(source, player)
+  local entity = source.module and source.module.entity and source.module:entity(1);
+  if(not (entity and player)) then return 0; end
+  local dx, dy = entity.position.x - player.position.x, entity.position.y - player.position.y;
+  return math.sqrt(dx * dx + dy * dy);
+end
+
+-- A module source of `type`: the first registered one; with `ready_only`,
+-- one with some of it in its outputs. Given `player` as well, the ready one
+-- is the nearest holding `wanted` or more, else the one holding the most
+-- (plan 4.11: with plates left in the furnaces, the first one with a plate
+-- or two had the bot waiting there while other furnaces held hundreds).
+function ResourceManager:module_source(type, ready_only, player, wanted)
+  local best;
   for i, source in ipairs(self.sources) do
     if(source:is_valid() and source:provides_type(type) and not out_of_reach(source)) then
-      if(not ready_only or source:has_output(type)) then
+      if(not ready_only or (source:has_output(type) and not player)) then
         return source;
+      end
+      if(source:has_output(type)) then
+        local count = ready_count(source, type);
+        local this = {source=source, count=count, enough=count >= (wanted or 1), distance=distance_to(source, player)};
+        local better = not best;
+        if(best and this.enough ~= best.enough) then
+          better = this.enough;
+        elseif(best and this.enough) then
+          better = this.distance < best.distance;
+        elseif(best and this.count ~= best.count) then
+          better = this.count > best.count;
+        elseif(best) then
+          better = this.distance < best.distance;
+        end
+        if(better) then best = this; end
       end
     end
   end
-  return nil;
+  return best and best.source or nil;
 end
 
 -- `optional`: don't build a module for it. `machine`: the stack asking; a
 -- module that a task on it is already building isn't started again (a drill
--- for the iron module needs iron plates).
-function ResourceManager:best_resource_source(player, type, optional, machine)
-  local source = self:module_source(type, true)
+-- for the iron module needs iron plates). `wanted`: how many more the
+-- inventory should get, to pick the module that has them.
+function ResourceManager:best_resource_source(player, type, optional, machine, wanted)
+  local source = self:module_source(type, true, player, wanted)
     or self:find_natural_source(player, type);
   if(source) then
     return source;
@@ -181,7 +217,8 @@ end
 -- Returns false when nothing known can provide the item. `optional`: see
 -- best_resource_source.
 function ResourceManager:get_resources(player, type, qty, machine, optional)
-  local source = self:best_resource_source(player, type, optional, machine);
+  local wanted = qty - Inventories.total_craftable_count(player, type);
+  local source = self:best_resource_source(player, type, optional, machine, wanted);
   if(not source) then
     return false;
   end

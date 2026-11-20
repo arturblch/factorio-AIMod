@@ -19,9 +19,10 @@ require 'controllers/tasks/plan_task'
   The bot's last goal: when the goals before it are met it doesn't stop.
    - Upkeep first: once a burner is low on fuel, a round that tops up every
      burner below half (all the coal of the coal modules collected in one
-     trip, see fuel_round); else emptying the nearest half full output.
-     Burner modules stop within minutes otherwise, and more of them would
-     make nothing.
+     trip, see fuel_round); else emptying the nearest coal module whose
+     output is half full. Burner modules stop within minutes otherwise, and
+     more of them would make nothing. Plates and stone wait in their modules
+     until something takes them (plan 4.11).
    - Then one more module (GrowthTask.plan): the planner (util/economy.lua)
      runs a model of the base forward from where it stands - what the
      modules make and burn, what is in stock - for each order of the next
@@ -141,11 +142,16 @@ function GrowthTask.fuel_round(player)
   return tasks;
 end
 
--- Tasks that empty `module`'s output, or nil when it needs nothing.
+-- Tasks that empty `module`'s output of the fuel, or nil when it needs
+-- nothing. Only the fuel (plan 4.11): emptying every half full output, the
+-- bot spent 41 % of its time after the tenth minute carrying plates about
+-- (1 500 iron and 1 250 copper in its inventory) that nothing used. Plates
+-- and stone wait in their modules until a gather takes them; a module
+-- standing full burns nothing meanwhile.
 local function upkeep(player, module)
   for i, output in ipairs(module.outputs) do
     local half = prototypes.item[output.type].stack_size / 2;
-    for j, found in ipairs(module:outputsForProduct(output.type)) do
+    for j, found in ipairs(output.type == GrowthTask.FUEL and module:outputsForProduct(output.type) or {}) do
       if(found.available >= half) then
         local qty = Inventories.total_craftable_count(player, output.type) + found.available;
         return {CollectModuleOutputTask:new{module=module, type=output.type, qty=qty}};
@@ -156,7 +162,7 @@ local function upkeep(player, module)
 end
 
 -- The upkeep due now, or nil: the refuel round, else emptying the nearest
--- module whose output is half full.
+-- coal module whose output is half full.
 function GrowthTask.upkeep(player)
   local round = GrowthTask.fuel_round(player);
   if(round) then
