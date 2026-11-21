@@ -67,6 +67,12 @@ local BLUEPRINTS = {
   --  AAA<LLL   science packs, an inserter taking them into a lab (L), a pole (p)
   --  AAA LLL   reaching all three and wired to the power module's
   ["red-science"] = "0eNp9kNFqwzAMRX/F6NkZS5p01J/R11GG4ohO1FaC7YyVkn8fTtu0o92ejJDuPff6BK0baQgsCcwJHLbkwMCWOhUtk1gyCkVhjORbx7JXHu0nCymPhzzimHqPiXu5CtSA9hB1lrFEComCYkm9QuWwBQ2cyIO5A2tg20sE836CyHtBl7MIegIDN0BxARQZAJMGlo6+wZSTfqLLrNtNNe00kCROTGfQPBw/ZPQtBTClXoBL1+LStShBw9BHzikyIkNfGg3H+Z00BLI8/J/2gVgtxOs3PVJWvygdB7LnbVk9cVzp+/IPZs2d2RN1vaijR+cKcmRTYFsMvaO/o71mt52GLwpx3jbratPUVb3ZrMv6rZqmH2atzBw=",
+  --  LLL   a second red science machine for a lab: an assembling machine (A)
+  --  LLL   south of it and an inserter into it, a pole (p); built on a lab
+  --  LLL   of ours (the power module's: its west side holds red-science)
+  --  pv    when the labs take more packs than the machines make (plan 3.14)
+  --  AAA
+  ["red-science-south"] = "0eNp9kNtuwyAQRH8F7TOOasdOG97yHVVVYbxNVoXFAlw1ivj3CueiqLk8IVhmzuwcoLcTjoE4gTqA1T1aULAREY3nQQQcRDSEbFA4bXbEqIRmoWNE11vi7flZRD+lnfBfQgure1l+EUcMCYMgTl5QAgmU0IG6okog4zmCej9ApC1rW4KwdggK9JS804k8V6cU1ajNN2QJxAP+gqqzvKe7xKtO8ar6StTkDwnIiRLhkTxf9p88uR4DqFqenazuQcLoI5UUBVGgi07Cfj5z4f9TNxf1uYDHFstFlyUMFNAcp293DJfy6WIPzbvZPKCh8XmbN8T2QoxOW1uhRZMCmWr0Fm+BL1fblG5/MMR52q2addc27Xq9qtvXJuc/RlnQeg==",
   ["belt-line"] ="0eNqV1tFugjAUBuBXac51NWtpQXiAvcRiFtCzpQkW0xajMbz7As5MN6bnXEKb72+hf+AMTdvjPjifoDpDWzfYQgWv7oCi6YPHILbBtW0UnU+dqEWDbZLio+uDcD5iSBiicOPYdC+mzqP46IOvNxhBgku4g+omRYLbdD5C9XaG6D593Y7Bvt4hVJBC7eO+C2kx5sAgwfktHqFSg5yZPqUtvtNuZuthLQF9csnhJWm6OL37ftdggErJK3HZ5GLnvPOfi2mvIGHfRZdc58es4zT9NK0Bti7g5jKyGpf0y9U8N6O6Gc+1VNfw3ILqWp5bUt1c/nNS/r6y5eUh6KW9Z80MW5BZzWFXZDbjsCWZNRxWvZBdy3IV2c1Zria7BcvNyO6K5RqyW7JcSy/FCwtmtI1VN0Xvm2IVTtEbp1iVU/TOKVbpNL10itU6TW+dYtVO//nGXf8DHpy3bGmHOStjWPqJZRiWeWJZhpU/sX5adP+7MlOiyZlXCrKSPVBWZMU+UEqyUlyVtYQDhjgN2VyX1mhTlrkyhR6GL0ngeso=",
 };
 
@@ -96,6 +102,10 @@ return {
     -- automation is researched; GrowthTask builds it with its pole in reach
     -- of ours (it needs no resource, only our electric network; plan 3.5)
     {name="RedScience", blueprint="red-science"},
+    -- a second machine of red packs for the same lab, for technologies of 5 s
+    -- a unit: one machine makes 6 packs a minute, a lab takes 12 of those
+    -- (GrowthTask.science_module, plan 3.14)
+    {name="RedScience2", blueprint="red-science-south"},
     -- stone into a chest: no goal asks for stone (the map has it), but growth
     -- builds it once mining stone by hand holds the bot up (GrowthTask,
     -- util/bottleneck.lua: 40 stone a column of four pairs), and gathers

@@ -240,12 +240,16 @@ T.describe("GrowthTask and science", function()
     restore()
   end)
 
-  T.it("researches by hand when it gave up on the module", function()
+  T.it("researches by hand when it gave up on the modules", function()
     restore = researched({ "steam-power", "electronics", "automation-science-pack", "automation" })
     have("SteamPower", { power = true })
     storage.failed_goals = { [1] = { "RedScience" } }
-    T.eq(first(GrowthTask.electricity(player)), "research electric-mining-drill", "by hand")
+    local without_first = first(GrowthTask.electricity(player))
+    storage.failed_goals = { [1] = { "RedScience", "RedScience2" } }
+    local without_both = first(GrowthTask.electricity(player))
     restore()
+    T.eq(without_first, "build RedScience2", "the other one instead")
+    T.eq(without_both, "research electric-mining-drill", "by hand")
   end)
 end)
 
@@ -283,5 +287,100 @@ T.describe("BuildModuleTask with a locked building", function()
     local task = tick(ModuleLibrary.get("RedScience")) -- the assembling machine waits for automation
     T.truthy(task.failed, "given up, not waiting for ever")
     for name, value in pairs(saved) do force.technologies[name].researched = value end
+  end)
+end)
+
+T.describe("A second red science machine (plan 3.14)", function()
+  local player, restore
+  T.before_each(function()
+    Lab.reset()
+    storage.resource_managers[1] = ResourceManager:new()
+    restore = researched({ "steam-power", "electronics", "automation-science-pack", "automation" })
+    player = Fakes.player{ surface = Lab.surface(), position = { x = 0, y = 0 } }
+  end)
+  local function machine_at(position)
+    return Lab.surface().create_entity{ name = "assembling-machine-1", position = position, force = "player", recipe = PACK }
+  end
+
+  T.it("is in the library: red packs into a lab, on our power", function()
+    local data, problem, checks = Blueprint.module{ name = "RedScience2", blueprint = LIBRARY.blueprints["red-science-south"] }
+    T.truthy(data, tostring(problem))
+    T.same(checks.errors, {}, "errors")
+    T.same(data.packs, { PACK }, "the lab's packs")
+    T.truthy(data.powered, "runs on our power")
+    T.truthy(ModuleLibrary.get("RedScience2"), "listed")
+    restore()
+  end)
+
+  T.it("goes on the power module's lab, south of it, next to the first machine", function()
+    -- the power module's pole and lab, and the first red machine west of the lab
+    local station_pole = Lab.entity("small-electric-pole", { 2.5, 2.5 })
+    local lab = Lab.entity("lab", { 1.5, 4.5 })
+    machine_at({ -2.5, 4.5 })
+    Lab.surface().create_entity{ name = "inserter", position = { -0.5, 4.5 }, force = "player", direction = defines.direction.west }
+    Lab.entity("small-electric-pole", { -0.5, 3.5 })
+    local module = ModuleLibrary.get("RedScience2"):instantiate()
+    local task = BuildModuleTask:new{ module = module }
+    local location = task:findLocation(player)
+    T.truthy(location, "a spot")
+    T.eq(task.reuse and task.reuse[1], lab, "the lab is ours already")
+    local corner = { x = math.floor(location.x), y = math.floor(location.y) }
+    local placed = {}
+    for i, building in ipairs(module.buildings) do
+      if i ~= 1 then
+        placed[building.type] = Lab.surface().create_entity{ name = building.type, force = "player",
+          position = { corner.x + building.position.x, corner.y + building.position.y },
+          direction = building.direction or defines.direction.north, recipe = building.recipe }
+      end
+    end
+    T.truthy(inside(lab, placed["inserter"].drop_position), "into the power module's lab")
+    T.truthy(inside(placed["assembling-machine-1"], placed["inserter"].pickup_position), "from its machine")
+    T.truthy(placed["assembling-machine-1"].position.y > lab.position.y, "south of the lab")
+    T.eq(placed["small-electric-pole"].electric_network_id, station_pole.electric_network_id, "wired to the station")
+    restore()
+  end)
+
+  T.it("a machine makes 6 packs a minute; a lab takes 6 at 10 s a unit, 12 at 5 s", function()
+    Lab.entity("small-electric-pole", { 3.5, 0.5 })
+    machine_at({ 1.5, 1.5 })
+    Lab.entity("lab", { 5.5, 1.5 })
+    local force = game.forces.player
+    local made, taken = GrowthTask.pack_pace(player, force.technologies["electric-mining-drill"], PACK)
+    T.near(made, 6, 1e-6, "made")
+    T.near(taken, 6, 1e-6, "electric mining drill")
+    made, taken = GrowthTask.pack_pace(player, force.technologies["logistic-science-pack"], PACK)
+    T.near(taken, 12, 1e-6, "green packs")
+    restore()
+  end)
+
+  T.it("growth builds it only when the labs take more than the machines make", function()
+    Lab.entity("small-electric-pole", { 3.5, 0.5 })
+    machine_at({ 1.5, 1.5 })
+    Lab.entity("lab", { 5.5, 1.5 })
+    local sources = storage.resource_managers[1].sources
+    sources[#sources + 1] = { module = { name = "RedScience", packs = { PACK }, powered = true }, is_valid = function() return true end }
+    local force = game.forces.player
+    T.eq(GrowthTask.science_module(player, force.technologies["electric-mining-drill"]), nil, "one is enough at 10 s")
+    local module = GrowthTask.science_module(player, force.technologies["logistic-science-pack"])
+    T.eq(module and module.name, "RedScience2", "a second one at 5 s")
+    restore()
+  end)
+
+  T.it("the research gives each machine an even share", function()
+    Lab.entity("small-electric-pole", { 3.5, 0.5 })
+    local near, far = machine_at({ 1.5, 1.5 }), machine_at({ 1.5, 5.5 })
+    Lab.entity("small-electric-pole", { 3.5, 4.5 })
+    Lab.entity("lab", { 5.5, 1.5 })
+    player = Fakes.player{ surface = Lab.surface(), position = { x = 0, y = 0 },
+      items = { ["copper-plate"] = 200, ["iron-gear-wheel"] = 200 } }
+    local goals = GoalMachine:new()
+    local task = ResearchTask:new{ tech = "logistic-science-pack" }
+    goals:pushSingle(task)
+    task:tick{ player = player, machine = goals }
+    task:tick{ player = player, machine = goals }
+    local function copper(machine) return machine.get_inventory(defines.inventory.crafter_input).get_item_count("copper-plate") end
+    T.same({ copper(near), copper(far) }, { 38, 37 }, "75 packs, half each")
+    T.same(ResearchTask.missing(player, game.forces.player.technologies["logistic-science-pack"]), {}, "the machines make the rest")
+    restore()
   end)
 end)

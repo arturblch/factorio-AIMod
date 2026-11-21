@@ -13,7 +13,8 @@ require 'controllers/tasks/research_trigger_task'
   carries them into a lab that has power. Where an assembling machine of
   ours with power makes the pack (a science module, blueprints/library.lua:
   its inserter takes the packs into a lab), the bot carries the machine its
-  ingredients instead, and the packs it will make count as in the labs.
+  ingredients instead, and the packs it will make count as in the labs;
+  with several such machines each gets its share.
   Done as soon as the labs hold (or will get) every pack the rest of the
   research takes, or it is researched, so the bot goes on with other things
   while the labs work; whoever pushed it looks again later (GrowthTask).
@@ -253,9 +254,18 @@ function ResearchTask:tick (args)
   if(not item) then
     return; -- achieved() takes it from here
   end
-  local machine = ResearchTask.assemblers(player, item)[1];
-  if(machine) then
-    self:feed(args, machine, item, math.min(short, MACHINE_BATCH));
+  -- with several machines making the pack, the one holding the fewest
+  -- gets up to an even share of the rest, so they finish together (plan 3.14)
+  local machines = ResearchTask.assemblers(player, item);
+  if(#machines > 0) then
+    local machine, held, total = machines[1], math.huge, short;
+    for i, other in ipairs(machines) do
+      local count = ResearchTask.in_machine(other, item);
+      total = total + count;
+      if(count < held) then machine, held = other, count; end
+    end
+    local share = math.ceil(total / #machines) - held;
+    self:feed(args, machine, item, math.max(1, math.min(share, short, MACHINE_BATCH)));
     return;
   end
   local batch = math.min(short, BATCH);

@@ -49,15 +49,20 @@ GrowthTask.FUEL = "coal";
 GrowthTask.POWER_MODULE = "SteamPower";
 GrowthTask.ELECTRICITY_AFTER = 4;
 -- The technologies growth wants; Strategy.roadmap puts their prerequisites
--- that take packs first (plan 2.8).
-GrowthTask.RESEARCH = {"automation", "electric-mining-drill"};
+-- that take packs first (plan 2.8). After the electric mining drill the
+-- green pack and steel (plan 3.5): every technology that takes green packs
+-- waits for the first, most of them for the second; both take red packs
+-- only, at 5 s a unit (plan 3.14).
+GrowthTask.RESEARCH = {"automation", "electric-mining-drill", "logistic-science-pack", "steel-processing"};
 -- The most modules the planner weighs (plan 2.9): the fuel and the raw items
 -- of the buildings always, then the final products furthest behind their
 -- targets; what more there is waits for a later plan.
 GrowthTask.MAX_CANDIDATES = 5;
 -- Modules that make science packs for our labs (plan 3.5), built before a
--- research that takes their packs once the force can make their buildings.
-GrowthTask.SCIENCE_MODULES = {"RedScience"};
+-- research that takes their packs once the force can make their buildings:
+-- the first of a pack, then another while the labs take more of it than
+-- our machines make (GrowthTask.science_module, plan 3.14).
+GrowthTask.SCIENCE_MODULES = {"RedScience", "RedScience2"};
 local LOW_FUEL = 5;       -- refuel below this many (a burner drill burns 2.25 coal a minute)
 local FUEL_AMOUNT = 20;   -- and top up to this many
 local REFUEL_BELOW = 10;  -- in that round, every burner below this many too
@@ -201,13 +206,46 @@ local function can_make(player, module)
   return true;
 end
 
+-- Packs of `pack` a minute that our assembling machines on a network make,
+-- and that our labs on a network take researching `tech` (plan 3.14): an
+-- assembling machine 1 makes 6 red packs a minute, a lab takes 6 of them on
+-- a technology of 10 s a unit, 12 on one of 5 s.
+function GrowthTask.pack_pace(player, tech, pack)
+  local made = 0;
+  for i, machine in ipairs(ResearchTask.assemblers(player, pack)) do
+    local recipe = machine.get_recipe();
+    local amount = 1;
+    for j, product in pairs(recipe.products) do
+      if(product.name == pack) then amount = product.amount or 1; end
+    end
+    made = made + machine.prototype.get_crafting_speed() / recipe.energy * 60 * amount;
+  end
+  local per_unit = 0;
+  for i, ingredient in ipairs(tech.research_unit_ingredients) do
+    if(ingredient.name == pack) then per_unit = ingredient.amount; end
+  end
+  local taken = 0;
+  for i, lab in ipairs(player.surface.find_entities_filtered{force=player.force, type="lab"}) do
+    if(lab.electric_network_id ~= nil) then
+      -- research_unit_energy is in ticks at speed 1
+      taken = taken + lab.prototype.get_researching_speed() * (1 + player.force.laboratory_speed_modifier) *
+        3600 / tech.research_unit_energy * per_unit;
+    end
+  end
+  return made, taken;
+end
+
 -- A module of SCIENCE_MODULES to build before researching `tech`, or nil:
--- one making packs `tech` takes that we don't have yet, didn't give up on
--- and can make the buildings of.
+-- one we don't have yet, didn't give up on and can make the buildings of,
+-- making packs `tech` takes that no module of ours makes yet, or that our
+-- labs take faster than our machines make them (GrowthTask.pack_pace).
 function GrowthTask.science_module(player, tech)
-  local have = {};
+  local have, making = {}, {};
   for i, module in ipairs(modules(player)) do
     have[module.name] = true;
+    for j, pack in ipairs(module.packs or {}) do
+      making[pack] = true;
+    end
   end
   local takes = {};
   for i, ingredient in ipairs(tech.research_unit_ingredients) do
@@ -217,7 +255,12 @@ function GrowthTask.science_module(player, tech)
     local module = ModuleLibrary.get(name);
     local useful = false;
     for j, pack in ipairs(module and module.packs or {}) do
-      useful = useful or takes[pack] == true;
+      if(takes[pack] and not making[pack]) then
+        useful = true;
+      elseif(takes[pack]) then
+        local made, taken = GrowthTask.pack_pace(player, tech, pack);
+        useful = useful or made < taken - 1e-6;
+      end
     end
     if(useful and not have[name] and not given_up(player, name) and can_make(player, module)) then
       return module;

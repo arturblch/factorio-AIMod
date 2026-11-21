@@ -1,0 +1,8 @@
+{"blueprint": {"label": "A second red science machine: an assembling machine south of a lab, an inserter into it", "item": "blueprint",
+  "icons": [{"signal": {"name": "automation-science-pack"}, "index": 1}, {"signal": {"name": "assembling-machine-1"}, "index": 2}],
+  "entities": [
+    {"entity_number": 1, "name": "lab", "position": {"x": 1.5, "y": 1.5}},
+    {"entity_number": 2, "name": "inserter", "position": {"x": 1.5, "y": 3.5}, "direction": 8},
+    {"entity_number": 3, "name": "assembling-machine-1", "position": {"x": 1.5, "y": 5.5}, "recipe": "automation-science-pack"},
+    {"entity_number": 4, "name": "small-electric-pole", "position": {"x": 0.5, "y": 3.5}}
+  ]}}
