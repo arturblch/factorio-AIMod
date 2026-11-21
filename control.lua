@@ -30,6 +30,7 @@ require 'util/strategy'
 require 'util/calibration'
 require 'util/evaluation'
 require 'util/time_budget'
+require 'util/pickup'
 require 'controllers/tasks/plan_task'
 require 'controllers/managers/chest_resource_source'
 require 'controllers/managers/build_module_resource_source'
@@ -149,6 +150,7 @@ function AIMod.tick_bot(player, machine)
     Calibration.tick(player);
     Evaluation.tick(player);
     TimeBudget.tick(player, machine);
+    Pickup.tick(player);
     machine:tick{ player=player }
   else
     AIMod.goals_done(player);
@@ -256,6 +258,7 @@ commands.add_command("aimod-evaluation", "How far the AIMod bot's base has come:
   if(not player) then return end
   player.print("AIMod " .. Evaluation.line(Evaluation.report(player)));
   player.print("AIMod " .. TimeBudget.line(TimeBudget.report(player)));
+  player.print("AIMod " .. Pickup.line(player));
 end)
 
 commands.add_command("aimod-modules", "Lists the modules the AIMod bot builds (blueprints/library.lua).", function(command)

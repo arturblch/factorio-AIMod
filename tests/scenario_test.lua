@@ -376,6 +376,7 @@ script.on_event(defines.events.on_tick, function(event)
     local time_line, time_key = time_lines(player)
     log("[test] " .. time_line)
     log("[test] " .. time_key)
+    log("[test] " .. Pickup.line(player))
     local failed = storage.failed_goals and storage.failed_goals[1] or {}
     if #failed > 0 then log("[test]   gave up on: " .. table.concat(failed, ", ")) end
     if (t.deaths or 0) > 0 then

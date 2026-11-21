@@ -2,6 +2,7 @@ require 'task'
 require 'util'
 require 'util/logger'
 require 'util/inventories'
+require 'util/pickup'
 require 'controllers/tasks/moveToPointTask'
 
 --[[
@@ -12,6 +13,8 @@ require 'controllers/tasks/moveToPointTask'
    - qty: number; how many the inventory should hold when done (a total)
    - all: boolean; (optional) take all there is instead (the refuel round
           takes all the coal of the coal modules in one trip)
+  Once it has what it came for it also takes what else the outputs within
+  reach hold (Pickup.sweep, plan 4.13): the next craft finds it on hand.
 ]]
 CollectModuleOutputTask = Task:new()
 local log = Logger.makeLogger("CollectModuleOutputTask");
@@ -54,5 +57,6 @@ function CollectModuleOutputTask:tick (args)
     end
   end
   -- whatever is still missing is the caller's (GatherResourceTask's) problem
+  Pickup.sweep(player);
   self.done = true;
 end

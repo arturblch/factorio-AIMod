@@ -31,6 +31,7 @@ require 'tests/unit/planner_test'
 require 'tests/unit/strategy_test'
 require 'tests/unit/evaluation_test'
 require 'tests/unit/time_budget_test'
+require 'tests/unit/pickup_test'
 require 'tests/unit/blueprint_test'
 require 'tests/unit/found_blueprints_test'
 require 'tests/unit/power_test'
@@ -50,6 +51,7 @@ T.global_before[#T.global_before + 1] = function()
   storage.calibration = nil
   storage.evaluation = nil
   storage.time_budget = nil
+  storage.pickup = nil
   storage.goals_done = {}
   storage.module_choice = nil
 end
